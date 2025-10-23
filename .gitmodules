@@ -1,0 +1,6 @@
+[submodule "ThirdParty/oniguruma"]
+	path = ThirdParty/oniguruma
+	url = https://github.com/kkos/oniguruma.git
+[submodule "ThirdParty/cJSON"]
+	path = ThirdParty/cJSON
+	url = https://github.com/DaveGamble/cJSON.git

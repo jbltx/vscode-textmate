@@ -1,5 +1,124 @@
 [
 	{
+		"grammarPath": "fixtures/go.json",
+		"lines": [
+			{
+				"line": "package main",
+				"tokens": [
+					{
+						"value": "package",
+						"scopes": [
+							"source.go",
+							"keyword.package.go"
+						]
+					},
+					{
+						"value": " ",
+						"scopes": [
+							"source.go"
+						]
+					},
+					{
+						"value": "main",
+						"scopes": [
+							"source.go",
+							"entity.name.type.package.go"
+						]
+					}
+				]
+			},
+			{
+				"line": "",
+				"tokens": [
+					{
+						"value": "",
+						"scopes": [
+							"source.go"
+						]
+					}
+				]
+			},
+			{
+				"line": "func main() {",
+				"tokens": [
+					{
+						"value": "func",
+						"scopes": [
+							"source.go",
+							"keyword.function.go"
+						]
+					},
+					{
+						"value": " ",
+						"scopes": [
+							"source.go"
+						]
+					},
+					{
+						"value": "main",
+						"scopes": [
+							"source.go",
+							"entity.name.function.go"
+						]
+					},
+					{
+						"value": "(",
+						"scopes": [
+							"source.go",
+							"punctuation.definition.begin.bracket.round.go"
+						]
+					},
+					{
+						"value": ")",
+						"scopes": [
+							"source.go",
+							"punctuation.definition.end.bracket.round.go"
+						]
+					},
+					{
+						"value": " ",
+						"scopes": [
+							"source.go"
+						]
+					},
+					{
+						"value": "{",
+						"scopes": [
+							"source.go",
+							"punctuation.definition.begin.bracket.curly.go"
+						]
+					}
+				]
+			},
+			{
+				"line": "}",
+				"tokens": [
+					{
+						"value": "}",
+						"scopes": [
+							"source.go",
+							"punctuation.definition.end.bracket.curly.go"
+						]
+					}
+				]
+			}
+		],
+		"grammars": [
+			"fixtures/text.json",
+			"fixtures/javascript.json",
+			"fixtures/javascript-regex.json",
+			"fixtures/coffee-script.json",
+			"fixtures/ruby.json",
+			"fixtures/html-erb.json",
+			"fixtures/html.json",
+			"fixtures/php.json",
+			"fixtures/python.json",
+			"fixtures/python-regex.json",
+			"fixtures/go.json"
+		],
+		"desc": "TEST #2"
+	},
+	{
 		"grammarPath": "fixtures/hello.json",
 		"lines": [
 			{
