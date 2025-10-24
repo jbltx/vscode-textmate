@@ -35,6 +35,10 @@ public:
 class IRuleFactoryHelper : public IRuleRegistry, public IGrammarRegistry {
 public:
     virtual ~IRuleFactoryHelper() {}
+
+    // New methods for proper rule registration
+    virtual RuleId allocateRuleId() = 0;
+    virtual void setRule(RuleId ruleId, Rule* rule) = 0;
 };
 
 // ICompilePatternsResult structure

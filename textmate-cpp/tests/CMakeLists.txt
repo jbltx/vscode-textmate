@@ -44,3 +44,81 @@ add_test(NAME FirstMateTests COMMAND test_first_mate)
 set_target_properties(test_first_mate PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# Phase 1 test executable
+add_executable(test_phase1_registration
+    test_phase1_registration.cpp
+)
+
+# Link against the library
+target_link_libraries(test_phase1_registration
+    vscode-textmate-cpp
+)
+
+# Add test
+add_test(NAME Phase1RegistrationTests COMMAND test_phase1_registration)
+
+# Set output directory
+set_target_properties(test_phase1_registration PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Phase 2 test executable
+add_executable(test_phase2_rule_factory
+    test_phase2_rule_factory.cpp
+)
+
+# Link against the library
+target_link_libraries(test_phase2_rule_factory
+    vscode-textmate-cpp
+)
+
+# Add test
+add_test(NAME Phase2RuleFactoryTests COMMAND test_phase2_rule_factory)
+
+# Set output directory
+set_target_properties(test_phase2_rule_factory PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Phase 3 test executable
+add_executable(test_phase3_grammar_init
+    test_phase3_grammar_init.cpp
+)
+
+# Link against the library
+target_link_libraries(test_phase3_grammar_init
+    vscode-textmate-cpp
+)
+
+# Include RapidJSON for parsing
+set(RAPIDJSON_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/include")
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_phase3_grammar_init PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+# Add test
+add_test(NAME Phase3GrammarInitTests COMMAND test_phase3_grammar_init)
+
+# Set output directory
+set_target_properties(test_phase3_grammar_init PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Phase 4 test executable
+add_executable(test_phase4_memory
+    test_phase4_memory.cpp
+)
+
+# Link against the library
+target_link_libraries(test_phase4_memory
+    vscode-textmate-cpp
+)
+
+# Add test
+add_test(NAME Phase4MemoryTests COMMAND test_phase4_memory)
+
+# Set output directory
+set_target_properties(test_phase4_memory PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)

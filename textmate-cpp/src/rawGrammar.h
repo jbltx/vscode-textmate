@@ -91,6 +91,9 @@ struct IRawRepositoryMap {
 
     IRawRepositoryMap() : selfRule(nullptr), baseRule(nullptr) {}
     ~IRawRepositoryMap();
+
+    // Helper method to get a rule by name (handles $self, $base, and regular rules)
+    IRawRule* getRule(const std::string& name) const;
 };
 
 struct IRawRepository : public IRawRepositoryMap, public ILocatable {

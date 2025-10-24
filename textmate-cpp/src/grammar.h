@@ -225,8 +225,9 @@ private:
     std::vector<TokenTypeMatcher> _tokenTypeMatchers;
     BalancedBracketSelectors* _balancedBracketSelectors;
 
-    std::vector<int> _tokens;
+    std::vector<IToken> _tokens;
     std::vector<uint32_t> _binaryTokens;
+    int _lastTokenEndIndex;
 
 public:
     LineTokens(
@@ -280,6 +281,8 @@ public:
 
     IThemeProvider* getThemeProvider() const { return _themeProvider; }
 
+    size_t getRuleCount() const { return _ruleId2desc.size(); }
+
     // IOnigLib implementation
     OnigScanner* createOnigScanner(const std::vector<std::string>& sources) override;
     OnigString* createOnigString(const std::string& str) override;
@@ -287,6 +290,10 @@ public:
     // IRuleRegistry implementation
     Rule* getRule(RuleId ruleId) override;
     RuleId registerRule(Rule* rule) override;
+
+    // IRuleFactoryHelper implementation (new methods)
+    RuleId allocateRuleId() override;
+    void setRule(RuleId ruleId, Rule* rule) override;
 
     // IGrammarRegistry implementation
     IRawGrammar* getExternalGrammar(const std::string& scopeName, IRawRepository* repository) override;

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <limits>
 #include <algorithm>
+#include <iostream>
 
 namespace vscode_textmate {
 
@@ -534,6 +535,7 @@ StackElement tokenizeString(
 
     // Main scanning loop
     while (!STOP) {
+
         // Check time limit
         if (timeLimit != 0) {
             auto currentTime = std::chrono::steady_clock::now();

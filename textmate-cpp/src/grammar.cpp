@@ -2,6 +2,7 @@
 #include "tokenizeString.h"
 #include "encodedTokenAttributes.h"
 #include <algorithm>
+#include <iostream>
 
 namespace vscode_textmate {
 
@@ -366,7 +367,8 @@ LineTokens::LineTokens(
     : _emitBinaryTokens(emitBinaryTokens),
       _lineText(lineText),
       _tokenTypeMatchers(tokenTypeMatchers),
-      _balancedBracketSelectors(balancedBracketSelectors) {
+      _balancedBracketSelectors(balancedBracketSelectors),
+      _lastTokenEndIndex(0) {
 }
 
 void LineTokens::produce(StateStackImpl* stack, int endIndex) {
@@ -374,33 +376,40 @@ void LineTokens::produce(StateStackImpl* stack, int endIndex) {
 }
 
 void LineTokens::produceFromScopes(AttributedScopeStack* scopesList, int endIndex) {
+    if (_lastTokenEndIndex >= endIndex) {
+        return;
+    }
+
     if (_emitBinaryTokens) {
-        _binaryTokens.push_back(endIndex);
+        _binaryTokens.push_back(_lastTokenEndIndex);
         _binaryTokens.push_back(scopesList->tokenAttributes);
+        _lastTokenEndIndex = endIndex;
     } else {
-        _tokens.push_back(endIndex);
-        _tokens.push_back(scopesList->tokenAttributes);
+        IToken token;
+        token.startIndex = _lastTokenEndIndex;
+        token.endIndex = endIndex;
+        token.scopes = scopesList->getScopeNames();
+        _tokens.push_back(token);
+        _lastTokenEndIndex = endIndex;
     }
 }
 
 std::vector<IToken> LineTokens::getResult(StateStackImpl* stack, int lineLength) {
-    std::vector<IToken> result;
-
-    // Convert tokens to IToken format
-    for (size_t i = 0; i < _tokens.size(); i += 2) {
-        IToken token;
-        token.startIndex = (i > 0) ? _tokens[i - 2] : 0;
-        token.endIndex = _tokens[i];
-
-        // Get scopes from stack
-        if (stack && stack->contentNameScopesList) {
-            token.scopes = stack->contentNameScopesList->getScopeNames();
-        }
-
-        result.push_back(token);
+    // Remove token for newline if it exists
+    if (!_tokens.empty() && _tokens.back().startIndex == lineLength - 1) {
+        _tokens.pop_back();
     }
 
-    return result;
+    // If no tokens, produce one for the entire line
+    if (_tokens.empty()) {
+        _lastTokenEndIndex = -1;
+        produce(stack, lineLength);
+        if (!_tokens.empty()) {
+            _tokens.back().startIndex = 0;
+        }
+    }
+
+    return _tokens;
 }
 
 std::vector<uint32_t> LineTokens::getBinaryResult(StateStackImpl* stack, int lineLength) {
@@ -450,21 +459,41 @@ Grammar::Grammar(
 }
 
 Grammar::~Grammar() {
+    std::cerr << "DEBUG: Grammar destructor called" << std::endl;
     dispose();
+    std::cerr << "DEBUG: Grammar destructor finished" << std::endl;
 }
 
 void Grammar::dispose() {
-    for (auto* rule : _ruleId2desc) {
+    std::cerr << "DEBUG: dispose() start, _ruleId2desc.size()=" << _ruleId2desc.size() << std::endl;
+    for (size_t i = 0; i < _ruleId2desc.size(); i++) {
+        auto* rule = _ruleId2desc[i];
         if (rule) {
+            std::cerr << "DEBUG: Disposing rule " << i << std::endl;
             rule->dispose();
+            std::cerr << "DEBUG: Deleting rule " << i << std::endl;
             delete rule;
+            std::cerr << "DEBUG: Rule " << i << " deleted" << std::endl;
         }
     }
     _ruleId2desc.clear();
+    std::cerr << "DEBUG: Rules cleared" << std::endl;
 
-    delete _basicScopeAttributesProvider;
-    delete _injections;
-    delete balancedBracketSelectors;
+    if (_basicScopeAttributesProvider) {
+        delete _basicScopeAttributesProvider;
+        _basicScopeAttributesProvider = nullptr;
+        std::cerr << "DEBUG: _basicScopeAttributesProvider deleted" << std::endl;
+    }
+    if (_injections) {
+        delete _injections;
+        _injections = nullptr;
+        std::cerr << "DEBUG: _injections deleted" << std::endl;
+    }
+    if (balancedBracketSelectors) {
+        delete balancedBracketSelectors;
+        balancedBracketSelectors = nullptr;
+        std::cerr << "DEBUG: balancedBracketSelectors deleted" << std::endl;
+    }
 }
 
 OnigScanner* Grammar::createOnigScanner(const std::vector<std::string>& sources) {
@@ -494,6 +523,21 @@ RuleId Grammar::registerRule(Rule* rule) {
     }
     _ruleId2desc[id] = rule;
     return ruleIdFromNumber(id);
+}
+
+RuleId Grammar::allocateRuleId() {
+    int id = ++_lastRuleId;
+    if (_ruleId2desc.size() <= static_cast<size_t>(id)) {
+        _ruleId2desc.resize(id + 1, nullptr);
+    }
+    return ruleIdFromNumber(id);
+}
+
+void Grammar::setRule(RuleId ruleId, Rule* rule) {
+    int id = ruleIdToNumber(ruleId);
+    if (id >= 0 && id < static_cast<int>(_ruleId2desc.size())) {
+        _ruleId2desc[id] = rule;
+    }
 }
 
 IRawGrammar* Grammar::getExternalGrammar(const std::string& scopeName, IRawRepository* repository) {
@@ -686,8 +730,29 @@ Grammar* createGrammar(
 }
 
 IRawGrammar* initGrammar(IRawGrammar* grammar, IRawRule* base) {
-    // Simplified: in full implementation, would merge base into grammar
-    // For now, just return the grammar as-is
+    // Create repository if it doesn't exist
+    if (!grammar->repository) {
+        grammar->repository = new IRawRepository();
+    }
+
+    // Create $self rule with grammar's patterns and scope name
+    IRawRule* selfRule = new IRawRule();
+    // Transfer ownership of patterns from grammar to $self rule
+    // This avoids double-free when both grammar and selfRule are destroyed
+    if (!grammar->patterns.empty()) {
+        selfRule->patterns = new std::vector<IRawRule*>(grammar->patterns);
+        // Clear grammar->patterns so we don't have shared ownership
+        // The IRawRule* objects are now owned only by selfRule->patterns
+        grammar->patterns.clear();
+    }
+    // Set name to grammar's scopeName
+    selfRule->name = new std::string(grammar->scopeName);
+
+    grammar->repository->selfRule = selfRule;
+
+    // Create $base rule
+    grammar->repository->baseRule = base ? base : selfRule;
+
     return grammar;
 }
 

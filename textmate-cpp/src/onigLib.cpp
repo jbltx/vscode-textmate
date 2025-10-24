@@ -1,5 +1,6 @@
 #include "onigLib.h"
 #include <cstring>
+#include <iostream>
 
 namespace vscode_textmate {
 
@@ -164,14 +165,22 @@ void OnigScanner::dispose() {
     }
 
     if (_regSet != nullptr) {
+        // ✅ FIX: onig_regset_free() already frees all the individual regexes
+        // So we must clear the _regexes pointers to avoid double-free
         onig_regset_free(_regSet);
         _regSet = nullptr;
-    }
 
-    for (size_t i = 0; i < _regexes.size(); i++) {
-        if (_regexes[i] != nullptr) {
-            onig_free(_regexes[i]);
+        // Clear the regex pointers since they were already freed by onig_regset_free
+        for (size_t i = 0; i < _regexes.size(); i++) {
             _regexes[i] = nullptr;
+        }
+    } else {
+        // No regset, need to free individual regexes manually
+        for (size_t i = 0; i < _regexes.size(); i++) {
+            if (_regexes[i] != nullptr) {
+                onig_free(_regexes[i]);
+                _regexes[i] = nullptr;
+            }
         }
     }
 

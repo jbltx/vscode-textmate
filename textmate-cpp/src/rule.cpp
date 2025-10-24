@@ -1,6 +1,7 @@
 #include "rule.h"
 #include "grammarDependencies.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace vscode_textmate {
 
@@ -465,7 +466,8 @@ RuleId RuleFactory::getCompiledRuleId(IRawRule* desc, IRuleFactoryHelper* helper
         return *desc->id;
     }
 
-    RuleId ruleId = helper->registerRule(nullptr); // Will be set later
+    // ✅ PHASE 2 FIX: Allocate ID first, build rule, then store it
+    RuleId ruleId = helper->allocateRuleId();
     desc->id = new RuleId(ruleId);
 
     Rule* rule = nullptr;
@@ -525,7 +527,11 @@ RuleId RuleFactory::getCompiledRuleId(IRawRule* desc, IRuleFactoryHelper* helper
         );
     }
 
-    // Register the rule (implementation detail - would need to store it)
+    // ✅ PHASE 2 FIX: Actually store the rule in the registry!
+    if (rule) {
+        helper->setRule(ruleId, rule);
+    }
+
     return ruleId;
 }
 
@@ -586,15 +592,85 @@ ICompilePatternsResult RuleFactory::_compilePatterns(std::vector<IRawRule*>* pat
         if (pattern->include) {
             IncludeReference reference = parseInclude(*pattern->include);
 
-            // Handle different include types
-            // Simplified implementation
-            ruleId = getCompiledRuleId(pattern, helper, repository);
+            switch (reference.kind) {
+                case IncludeReferenceKind::Base:
+                case IncludeReferenceKind::Self: {
+                    // Look up in repository using the include string
+                    IRawRule* repoRule = repository->getRule(*pattern->include);
+                    if (repoRule) {
+                        ruleId = getCompiledRuleId(repoRule, helper, repository);
+                    }
+                    break;
+                }
+
+                case IncludeReferenceKind::RelativeReference: {
+                    // Local include found in `repository` (e.g., #ruleName)
+                    IRawRule* localIncludedRule = repository->getRule(reference.ruleName);
+                    if (localIncludedRule) {
+                        ruleId = getCompiledRuleId(localIncludedRule, helper, repository);
+                    }
+                    break;
+                }
+
+                case IncludeReferenceKind::TopLevelReference:
+                case IncludeReferenceKind::TopLevelRepositoryReference: {
+                    const std::string& externalGrammarName = reference.scopeName;
+                    const std::string* externalGrammarInclude =
+                        (reference.kind == IncludeReferenceKind::TopLevelRepositoryReference)
+                            ? &reference.ruleName
+                            : nullptr;
+
+                    // External include - get the external grammar
+                    IRawGrammar* externalGrammar = helper->getExternalGrammar(externalGrammarName, repository);
+
+                    if (externalGrammar) {
+                        if (externalGrammarInclude) {
+                            IRawRule* externalIncludedRule = externalGrammar->repository->getRule(*externalGrammarInclude);
+                            if (externalIncludedRule) {
+                                ruleId = getCompiledRuleId(externalIncludedRule, helper, externalGrammar->repository);
+                            }
+                        } else {
+                            // Reference to top-level rule
+                            IRawRule* selfRule = externalGrammar->repository->getRule("$self");
+                            if (selfRule) {
+                                ruleId = getCompiledRuleId(selfRule, helper, externalGrammar->repository);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
         } else {
             ruleId = getCompiledRuleId(pattern, helper, repository);
         }
 
         if (ruleIdToNumber(ruleId) != -1) {
-            result.patterns.push_back(ruleId);
+            Rule* rule = helper->getRule(ruleId);
+
+            bool skipRule = false;
+
+            // Check if rule should be skipped (has missing patterns and no actual patterns)
+            IncludeOnlyRule* includeOnlyRule = dynamic_cast<IncludeOnlyRule*>(rule);
+            BeginEndRule* beginEndRule = dynamic_cast<BeginEndRule*>(rule);
+            BeginWhileRule* beginWhileRule = dynamic_cast<BeginWhileRule*>(rule);
+
+            if (includeOnlyRule) {
+                if (includeOnlyRule->hasMissingPatterns && includeOnlyRule->patterns.empty()) {
+                    skipRule = true;
+                }
+            } else if (beginEndRule) {
+                if (beginEndRule->hasMissingPatterns && beginEndRule->patterns.empty()) {
+                    skipRule = true;
+                }
+            } else if (beginWhileRule) {
+                if (beginWhileRule->hasMissingPatterns && beginWhileRule->patterns.empty()) {
+                    skipRule = true;
+                }
+            }
+
+            if (!skipRule) {
+                result.patterns.push_back(ruleId);
+            }
         }
     }
 

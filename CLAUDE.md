@@ -102,3 +102,48 @@ Grammars can be "injected" into other grammars at specific scope selectors (e.g.
 - `release/` - Webpack bundled output (generated)
 - `out/` - TypeScript compiler output (generated)
 
+# C++ Port
+
+A C++ port of this library is maintained at:
+- `textmate-cpp/`
+
+The C++ port aims to provide similar functionality for TextMate grammar parsing and tokenization, optimized for performance in C++ applications. To verify correctness, the C++ port uses the same test cases as the TypeScript version.
+
+**IMPORTANT**: Always compare the C++ implementation's output against the TypeScript version to ensure consistency.
+
+## Build
+
+The C++ port uses CMake for building. To build the project, run the following commands:
+
+```bash
+cd textmate-cpp
+mkdir -p build
+cd build
+cmake ..
+cmake --build .
+```
+
+## Testing
+
+### Main tests - First Mate
+
+To run the tests for the C++ port, execute the following command from the `build` directory:
+
+```bash
+./tests/test_first_mate
+```
+
+This will run the test suite using `test-cases/first-mate/tests.json` as the source for test inputs,
+and `test-cases/first-mate/fixtures/*.json` as the source for grammar fixtures.
+
+### Others tests
+
+When required, additional tests can be written and run individually. For example, to run the balanced brackets tests:
+
+```bash
+./tests/test_grammar
+```
+
+When editing tests, ensure to update the CMakeLists.txt file located in the `tests` directory.
+
+NEVER USE `timeout` nor `gtimeout` CLI COMMANDS TO RUN TESTS, IT IS NOT SUPPORTED BY ALL PLATFORMS.

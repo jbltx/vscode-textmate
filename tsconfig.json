@@ -18,6 +18,7 @@
 		"release",
 		"out",
 		"test-cases",
-		"ThirdParty"
+		"ThirdParty",
+		"textmate-cpp"
 	]
 }

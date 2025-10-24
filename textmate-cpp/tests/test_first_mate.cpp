@@ -159,7 +159,6 @@ bool testLine(Grammar* grammar,
     }
 
     // Compare tokens
-    std::string currentPos = 0;
     for (const auto& token : result.tokens) {
         std::string tokenText = line.substr(token.startIndex, token.endIndex - token.startIndex);
 
