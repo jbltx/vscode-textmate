@@ -104,9 +104,9 @@ public:
 
     std::string getDebugName() const;
     std::string* getName(const std::string* lineText,
-                         const std::vector<IOnigCaptureIndex>* captureIndices);
+                         const std::vector<IOnigCaptureIndex>* captureIndices) const;
     std::string* getContentName(const std::string& lineText,
-                               const std::vector<IOnigCaptureIndex>& captureIndices);
+                               const std::vector<IOnigCaptureIndex>& captureIndices) const;
 
     virtual void collectPatterns(IRuleRegistry* grammar, RegExpSourceList* out) = 0;
     virtual CompiledRule* compile(IRuleRegistry* grammar, IOnigLib* onigLib,

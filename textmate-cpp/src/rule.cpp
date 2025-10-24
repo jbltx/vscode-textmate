@@ -107,7 +107,7 @@ std::string Rule::getDebugName() const {
 }
 
 std::string* Rule::getName(const std::string* lineText,
-                           const std::vector<IOnigCaptureIndex>* captureIndices) {
+                           const std::vector<IOnigCaptureIndex>* captureIndices) const {
     if (!_nameIsCapturing || _name == nullptr || lineText == nullptr || captureIndices == nullptr) {
         return _name ? new std::string(*_name) : nullptr;
     }
@@ -115,7 +115,7 @@ std::string* Rule::getName(const std::string* lineText,
 }
 
 std::string* Rule::getContentName(const std::string& lineText,
-                                  const std::vector<IOnigCaptureIndex>& captureIndices) {
+                                  const std::vector<IOnigCaptureIndex>& captureIndices) const {
     if (!_contentNameIsCapturing || _contentName == nullptr) {
         return _contentName ? new std::string(*_contentName) : nullptr;
     }

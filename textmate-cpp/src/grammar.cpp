@@ -96,6 +96,73 @@ AttributedScopeStack* AttributedScopeStack::push(
     return new AttributedScopeStack(this, scopeName, scopeTokenAttributes);
 }
 
+AttributedScopeStack* AttributedScopeStack::pushAttributed(
+    const std::string& scopePath,
+    Grammar* grammar) {
+
+    if (scopePath.empty()) {
+        return this;
+    }
+
+    // Check if scopePath contains spaces (multiple scopes)
+    if (scopePath.find(' ') == std::string::npos) {
+        // This is the common case and much faster - single scope
+        return _pushAttributed(this, scopePath, grammar);
+    }
+
+    // Split by spaces and push each scope
+    std::vector<std::string> scopes;
+    std::string currentScope;
+    for (char c : scopePath) {
+        if (c == ' ') {
+            if (!currentScope.empty()) {
+                scopes.push_back(currentScope);
+                currentScope.clear();
+            }
+        } else {
+            currentScope += c;
+        }
+    }
+    if (!currentScope.empty()) {
+        scopes.push_back(currentScope);
+    }
+
+    AttributedScopeStack* result = this;
+    for (const std::string& scope : scopes) {
+        result = _pushAttributed(result, scope, grammar);
+    }
+    return result;
+}
+
+AttributedScopeStack* AttributedScopeStack::_pushAttributed(
+    AttributedScopeStack* target,
+    const std::string& scopeName,
+    Grammar* grammar) {
+
+    if (scopeName.empty()) {
+        return target;
+    }
+
+    BasicScopeAttributes rawMetadata = grammar->getMetadataForScope(scopeName);
+
+    // Get theme match result
+    IThemeProvider* themeProvider = grammar->getThemeProvider();
+    StyleAttributes* defaultStyle = themeProvider->getDefaults();
+
+    // Merge attributes
+    EncodedTokenAttributes metadata = EncodedTokenAttributesHelper::set(
+        target->tokenAttributes,
+        rawMetadata.languageId,
+        rawMetadata.tokenType,
+        nullptr,
+        defaultStyle->fontStyle,
+        defaultStyle->foregroundId,
+        defaultStyle->backgroundId
+    );
+
+    return new AttributedScopeStack(target, scopeName, metadata);
+}
+
 std::vector<std::string> AttributedScopeStack::getScopeNames() const {
     std::vector<std::string> result;
     const AttributedScopeStack* current = this;
@@ -135,8 +202,8 @@ StateStackImpl::StateStackImpl(
     AttributedScopeStack* contentNameScopesList_)
     : parent(parent_),
       ruleId(ruleId_),
-      enterPos(enterPos_),
-      anchorPos(anchorPos_),
+      _enterPos(enterPos_),
+      _anchorPos(anchorPos_),
       beginRuleCapturedEOL(beginRuleCapturedEOL_),
       endRule(endRule_ ? new std::string(*endRule_) : nullptr),
       nameScopesList(nameScopesList_),
@@ -154,8 +221,8 @@ StateStack* StateStackImpl::clone() {
     return new StateStackImpl(
         parent,
         ruleId,
-        enterPos,
-        anchorPos,
+        _enterPos,
+        _anchorPos,
         beginRuleCapturedEOL,
         endRule,
         nameScopesList,
@@ -172,7 +239,7 @@ bool StateStackImpl::equals(StateStack* other) {
 
     // Compare all fields
     if (ruleIdToNumber(ruleId) != ruleIdToNumber(otherImpl->ruleId)) return false;
-    if (enterPos != otherImpl->enterPos) return false;
+    if (_enterPos != otherImpl->_enterPos) return false;
 
     bool thisHasEndRule = (endRule != nullptr);
     bool otherHasEndRule = (otherImpl->endRule != nullptr);
@@ -190,11 +257,16 @@ bool StateStackImpl::equals(StateStack* other) {
 }
 
 void StateStackImpl::reset() {
-    // Reset any cached state if needed
+    // Reset enter and anchor positions
+    StateStackImpl* el = this;
+    while (el) {
+        el->_enterPos = -1;
+        el->_anchorPos = -1;
+        el = el->parent;
+    }
 }
 
 StateStackImpl* StateStackImpl::push(
-    StateStackImpl* path,
     RuleId ruleId,
     int enterPos,
     int anchorPos,
@@ -204,7 +276,7 @@ StateStackImpl* StateStackImpl::push(
     AttributedScopeStack* contentNameScopesList) {
 
     return new StateStackImpl(
-        path,
+        this,
         ruleId,
         enterPos,
         anchorPos,
@@ -215,8 +287,61 @@ StateStackImpl* StateStackImpl::push(
     );
 }
 
-StateStackImpl* StateStackImpl::pop(StateStackImpl* path) {
-    return path ? path->parent : nullptr;
+StateStackImpl* StateStackImpl::pop() {
+    return this->parent;
+}
+
+StateStackImpl* StateStackImpl::safePop() {
+    if (this->parent) {
+        return this->parent;
+    }
+    return this;
+}
+
+Rule* StateStackImpl::getRule(Grammar* grammar) {
+    return grammar->getRule(this->ruleId);
+}
+
+StateStackImpl* StateStackImpl::withContentNameScopesList(AttributedScopeStack* contentNameScopesList) {
+    if (this->contentNameScopesList == contentNameScopesList) {
+        return this;
+    }
+    return this->parent->push(
+        this->ruleId,
+        this->_enterPos,
+        this->_anchorPos,
+        this->beginRuleCapturedEOL,
+        this->endRule,
+        this->nameScopesList,
+        contentNameScopesList
+    );
+}
+
+StateStackImpl* StateStackImpl::withEndRule(const std::string& endRule) {
+    if (this->endRule && *this->endRule == endRule) {
+        return this;
+    }
+    return new StateStackImpl(
+        this->parent,
+        this->ruleId,
+        this->_enterPos,
+        this->_anchorPos,
+        this->beginRuleCapturedEOL,
+        &endRule,
+        this->nameScopesList,
+        this->contentNameScopesList
+    );
+}
+
+bool StateStackImpl::hasSameRuleAs(StateStackImpl* other) {
+    StateStackImpl* el = this;
+    while (el && el->_enterPos == other->_enterPos) {
+        if (ruleIdToNumber(el->ruleId) == ruleIdToNumber(other->ruleId)) {
+            return true;
+        }
+        el = el->parent;
+    }
+    return false;
 }
 
 std::string StateStackImpl::toString() const {

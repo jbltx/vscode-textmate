@@ -134,20 +134,34 @@ public:
         const std::string& scopeName
     );
 
+    AttributedScopeStack* pushAttributed(
+        const std::string& scopePath,
+        Grammar* grammar
+    );
+
     std::vector<std::string> getScopeNames() const;
 
     static bool equals(AttributedScopeStack* a, AttributedScopeStack* b);
+
+private:
+    static AttributedScopeStack* _pushAttributed(
+        AttributedScopeStack* target,
+        const std::string& scopeName,
+        Grammar* grammar
+    );
 };
 
 // StateStackImpl class (StateStack implementation)
 class StateStackImpl : public StateStack {
+private:
+    int _enterPos;
+    int _anchorPos;
+
 public:
     static StateStackImpl* NULL_STATE;
 
     StateStackImpl* parent;
     RuleId ruleId;
-    int enterPos;
-    int anchorPos;
     bool beginRuleCapturedEOL;
     std::string* endRule;
     AttributedScopeStack* nameScopesList;
@@ -174,8 +188,8 @@ public:
 
     void reset();
 
-    static StateStackImpl* push(
-        StateStackImpl* path,
+    // Stack manipulation
+    StateStackImpl* push(
         RuleId ruleId,
         int enterPos,
         int anchorPos,
@@ -185,7 +199,20 @@ public:
         AttributedScopeStack* contentNameScopesList
     );
 
-    static StateStackImpl* pop(StateStackImpl* path);
+    StateStackImpl* pop();
+    StateStackImpl* safePop();
+
+    // Accessors
+    int getEnterPos() const { return _enterPos; }
+    int getAnchorPos() const { return _anchorPos; }
+    Rule* getRule(Grammar* grammar);
+
+    // State modification
+    StateStackImpl* withContentNameScopesList(AttributedScopeStack* contentNameScopesList);
+    StateStackImpl* withEndRule(const std::string& endRule);
+
+    // Comparison
+    bool hasSameRuleAs(StateStackImpl* other);
 
     std::string toString() const;
 };
