@@ -29,6 +29,7 @@ set(TEXTMATE_SOURCES
     src/tokenizeString.cpp
     src/grammar.cpp
     src/registry.cpp
+    src/c_api.cpp
 )
 
 # Header files (for IDE support)
@@ -48,6 +49,7 @@ set(TEXTMATE_HEADERS
     src/grammar.h
     src/registry.h
     src/main.h
+    src/c_api.h
 )
 
 # Find Oniguruma library
@@ -79,12 +81,17 @@ else()
     target_link_libraries(vscode-textmate-cpp onig)
 endif()
 
-# Set output directory
+# Set output directory and define TEXTMATE_EXPORTS for Windows DLL export
 set_target_properties(vscode-textmate-cpp PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON
 )
+
+# Define TEXTMATE_EXPORTS when building the library
+target_compile_definitions(vscode-textmate-cpp PRIVATE TEXTMATE_EXPORTS)
 
 # Install targets
 install(TARGETS vscode-textmate-cpp
@@ -110,7 +117,3 @@ message(STATUS "vscode-textmate-cpp configuration:")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Source files: ${TEXTMATE_SOURCES}")
-
-# Debug external include program
-add_executable(debug_external_include build/debug_external_include.cpp)
-target_link_libraries(debug_external_include vscode-textmate-cpp)

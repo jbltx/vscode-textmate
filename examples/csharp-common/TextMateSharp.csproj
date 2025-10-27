@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Copy native library to output directory -->
+    <None Include="../../textmate-cpp/build/lib/libvscode-textmate-cpp.dylib"
+          Condition="'$(OS)' != 'Windows_NT'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="libvscode-textmate-cpp.dylib" />
+
+    <None Include="../../textmate-cpp/build/lib/vscode-textmate-cpp.dll"
+          Condition="'$(OS)' == 'Windows_NT'"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="vscode-textmate-cpp.dll" />
+  </ItemGroup>
+
+</Project>
