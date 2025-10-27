@@ -18,12 +18,6 @@ void print(EncodedTokenAttributes encodedTokenAttributes) {
     int fontStyle = getFontStyle(encodedTokenAttributes);
     int foreground = getForeground(encodedTokenAttributes);
     int background = getBackground(encodedTokenAttributes);
-
-    std::cout << "languageId: " << languageId << std::endl;
-    std::cout << "tokenType: " << static_cast<int>(tokenType) << std::endl;
-    std::cout << "fontStyle: " << fontStyle << std::endl;
-    std::cout << "foreground: " << foreground << std::endl;
-    std::cout << "background: " << background << std::endl;
 }
 
 int getLanguageId(EncodedTokenAttributes encodedTokenAttributes) {

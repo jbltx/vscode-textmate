@@ -462,40 +462,30 @@ Grammar::Grammar(
 }
 
 Grammar::~Grammar() {
-    std::cerr << "DEBUG: Grammar destructor called" << std::endl;
     dispose();
-    std::cerr << "DEBUG: Grammar destructor finished" << std::endl;
 }
 
 void Grammar::dispose() {
-    std::cerr << "DEBUG: dispose() start, _ruleId2desc.size()=" << _ruleId2desc.size() << std::endl;
     for (size_t i = 0; i < _ruleId2desc.size(); i++) {
         auto* rule = _ruleId2desc[i];
         if (rule) {
-            std::cerr << "DEBUG: Disposing rule " << i << std::endl;
             rule->dispose();
-            std::cerr << "DEBUG: Deleting rule " << i << std::endl;
             delete rule;
-            std::cerr << "DEBUG: Rule " << i << " deleted" << std::endl;
         }
     }
     _ruleId2desc.clear();
-    std::cerr << "DEBUG: Rules cleared" << std::endl;
 
     if (_basicScopeAttributesProvider) {
         delete _basicScopeAttributesProvider;
         _basicScopeAttributesProvider = nullptr;
-        std::cerr << "DEBUG: _basicScopeAttributesProvider deleted" << std::endl;
     }
     if (_injections) {
         delete _injections;
         _injections = nullptr;
-        std::cerr << "DEBUG: _injections deleted" << std::endl;
     }
     if (balancedBracketSelectors) {
         delete balancedBracketSelectors;
         balancedBracketSelectors = nullptr;
-        std::cerr << "DEBUG: balancedBracketSelectors deleted" << std::endl;
     }
 }
 
@@ -544,26 +534,20 @@ void Grammar::setRule(RuleId ruleId, Rule* rule) {
 }
 
 IRawGrammar* Grammar::getExternalGrammar(const std::string& scopeName, IRawRepository* repository) {
-    std::cerr << "DEBUG: getExternalGrammar called for: " << scopeName << std::endl;
     auto it = _includedGrammars.find(scopeName);
     if (it != _includedGrammars.end()) {
-        std::cerr << "DEBUG:   found in cache" << std::endl;
         return it->second;
     }
 
     if (_grammarRepository) {
-        std::cerr << "DEBUG:   looking up in grammar repository" << std::endl;
         IRawGrammar* rawIncludedGrammar = _grammarRepository->lookup(scopeName);
         if (rawIncludedGrammar) {
-            std::cerr << "DEBUG:   found! Initializing..." << std::endl;
             IRawRule* base = (repository && repository->baseRule) ? repository->baseRule : nullptr;
             _includedGrammars[scopeName] = initGrammar(rawIncludedGrammar, base);
             return _includedGrammars[scopeName];
         } else {
-            std::cerr << "DEBUG:   not found in repository" << std::endl;
         }
     } else {
-        std::cerr << "DEBUG:   no grammar repository" << std::endl;
     }
 
     return nullptr;

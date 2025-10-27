@@ -166,17 +166,18 @@ public class Grammar
                 for (int i = 0; i < nativeResult.TokenCount; i++)
                 {
                     var nativeToken = tokenPtr[i];
-                    var scopes = new List<string>(nativeToken.ScopeDepth);
 
+                    // Pre-allocate list with exact capacity to reduce allocations
+                    var scopes = new List<string>(nativeToken.ScopeDepth);
                     var scopesPtr = (IntPtr*)nativeToken.Scopes;
+
                     for (int j = 0; j < nativeToken.ScopeDepth; j++)
                     {
                         var scopeStr = Marshal.PtrToStringUTF8(scopesPtr[j]);
                         if (scopeStr != null)
                         {
                             // Intern scope strings to reduce memory allocations
-                            scopeStr = ScopeCache.Intern(scopeStr);
-                            scopes.Add(scopeStr);
+                            scopes.Add(ScopeCache.Intern(scopeStr));
                         }
                     }
 
@@ -221,12 +222,14 @@ public class Grammar
 
     /// <summary>
     /// Check if a string contains only ASCII characters (fast path detection)
+    /// Optimized with ReadOnlySpan for better performance
     /// </summary>
     private static bool IsAscii(string str)
     {
-        foreach (char c in str)
+        ReadOnlySpan<char> span = str.AsSpan();
+        for (int i = 0; i < span.Length; i++)
         {
-            if (c > 0x7F) return false;
+            if (span[i] > 0x7F) return false;
         }
         return true;
     }
@@ -329,6 +332,126 @@ public class Grammar
         finally
         {
             textmate_free_tokenize_result2(resultPtr);
+        }
+    }
+
+    /// <summary>
+    /// Batch tokenize multiple lines in a single native call (Phase 2 optimization)
+    /// This dramatically reduces PInvoke overhead by processing all lines at once
+    /// </summary>
+    public List<TokenizeLineResult> TokenizeLines(string[] lines, StateStack prevState)
+    {
+        // Convert strings to UTF-8 and pin them
+        var utf8Lines = new IntPtr[lines.Length];
+        var handles = new System.Runtime.InteropServices.GCHandle[lines.Length];
+
+        try
+        {
+            // Pin all strings
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var utf8Bytes = System.Text.Encoding.UTF8.GetBytes(lines[i] + "\0");
+                handles[i] = System.Runtime.InteropServices.GCHandle.Alloc(utf8Bytes, System.Runtime.InteropServices.GCHandleType.Pinned);
+                utf8Lines[i] = handles[i].AddrOfPinnedObject();
+            }
+
+            // Call native batch function
+            var resultPtr = textmate_tokenize_lines(_handle, utf8Lines, lines.Length, prevState.Handle);
+            if (resultPtr == IntPtr.Zero)
+            {
+                throw new Exception("Failed to tokenize lines");
+            }
+
+            try
+            {
+                var batchResult = Marshal.PtrToStructure<TextMateTokenizeMultiLinesResult>(resultPtr);
+                var results = new List<TokenizeLineResult>(batchResult.LineCount);
+
+                unsafe
+                {
+                    var lineResultsPtr = (IntPtr*)batchResult.LineResults;
+
+                    for (int lineIdx = 0; lineIdx < batchResult.LineCount; lineIdx++)
+                    {
+                        var lineResultPtr = lineResultsPtr[lineIdx];
+                        var nativeResult = Marshal.PtrToStructure<TextMateTokenizeResult>(lineResultPtr);
+                        var tokens = new List<Token>(nativeResult.TokenCount);
+
+                        // ASCII fast path
+                        bool isAscii = IsAscii(lines[lineIdx]);
+
+                        // Cached position for index conversion
+                        int lastByteIndex = 0;
+                        int lastCharIndex = 0;
+                        int lastStringPos = 0;
+
+                        var tokenPtr = (TextMateToken*)nativeResult.Tokens;
+                        for (int i = 0; i < nativeResult.TokenCount; i++)
+                        {
+                            var nativeToken = tokenPtr[i];
+
+                            // Pre-allocate list with exact capacity
+                            var scopes = new List<string>(nativeToken.ScopeDepth);
+                            var scopesPtr = (IntPtr*)nativeToken.Scopes;
+
+                            for (int j = 0; j < nativeToken.ScopeDepth; j++)
+                            {
+                                var scopeStr = Marshal.PtrToStringUTF8(scopesPtr[j]);
+                                if (scopeStr != null)
+                                {
+                                    scopes.Add(ScopeCache.Intern(scopeStr));
+                                }
+                            }
+
+                            // Convert UTF-8 byte indices to UTF-16 char indices
+                            int startCharIndex, endCharIndex;
+                            if (isAscii)
+                            {
+                                startCharIndex = Math.Min(nativeToken.StartIndex, lines[lineIdx].Length);
+                                endCharIndex = Math.Min(nativeToken.EndIndex, lines[lineIdx].Length);
+                            }
+                            else
+                            {
+                                startCharIndex = Utf8ByteIndexToCharIndexCached(lines[lineIdx], nativeToken.StartIndex,
+                                    ref lastByteIndex, ref lastCharIndex, ref lastStringPos);
+                                endCharIndex = Utf8ByteIndexToCharIndexCached(lines[lineIdx], nativeToken.EndIndex,
+                                    ref lastByteIndex, ref lastCharIndex, ref lastStringPos);
+                            }
+
+                            tokens.Add(new Token
+                            {
+                                StartIndex = startCharIndex,
+                                EndIndex = endCharIndex,
+                                Scopes = scopes
+                            });
+                        }
+
+                        results.Add(new TokenizeLineResult
+                        {
+                            Tokens = tokens,
+                            RuleStack = new StateStack(nativeResult.RuleStack),
+                            StoppedEarly = nativeResult.StoppedEarly != 0
+                        });
+                    }
+                }
+
+                return results;
+            }
+            finally
+            {
+                textmate_free_tokenize_lines_result(resultPtr);
+            }
+        }
+        finally
+        {
+            // Unpin all strings
+            for (int i = 0; i < handles.Length; i++)
+            {
+                if (handles[i].IsAllocated)
+                {
+                    handles[i].Free();
+                }
+            }
         }
     }
 }

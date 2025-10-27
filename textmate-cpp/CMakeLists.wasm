@@ -1,0 +1,72 @@
+cmake_minimum_required(VERSION 3.10)
+project(vscode-textmate-wasm VERSION 1.0.0 LANGUAGES CXX)
+
+# Set C++11 standard
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Include directories
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ThirdParty/rapidjson/include
+)
+
+# Source files (excluding tests and debug programs)
+set(TEXTMATE_SOURCES
+    src/utils.cpp
+    src/onigLib.cpp
+    src/rawGrammar.cpp
+    src/parseRawGrammar.cpp
+    src/theme.cpp
+    src/encodedTokenAttributes.cpp
+    src/rule.cpp
+    src/matcher.cpp
+    src/grammarDependencies.cpp
+    src/basicScopesAttributeProvider.cpp
+    src/tokenizeString.cpp
+    src/grammar.cpp
+    src/registry.cpp
+    src/main.cpp
+    src/bindings.cpp
+)
+
+# Emscripten-specific flags
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
+    -s WASM=1 \
+    -s MODULARIZE=1 \
+    -s EXPORT_NAME='createTextMateModule' \
+    -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap'] \
+    -s ALLOW_MEMORY_GROWTH=1 \
+    -s INITIAL_MEMORY=33554432 \
+    -s MAXIMUM_MEMORY=2147483648 \
+    -s STACK_SIZE=5242880 \
+    --bind \
+    -fexceptions")
+
+# Release optimizations
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+
+# Debug flags
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -s ASSERTIONS=1")
+
+# Add oniguruma from emscripten ports
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_ONIGURUMA=1")
+
+# Create WASM library
+add_executable(vscode-textmate-wasm ${TEXTMATE_SOURCES})
+
+# Set output name
+set_target_properties(vscode-textmate-wasm PROPERTIES
+    OUTPUT_NAME "textmate"
+    SUFFIX ".js"
+)
+
+# Set output directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/wasm)
+
+# Print configuration
+message(STATUS "vscode-textmate-wasm configuration:")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Emscripten: ${EMSCRIPTEN}")

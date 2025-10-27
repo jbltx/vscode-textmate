@@ -107,6 +107,23 @@ TEXTMATE_API void textmate_free_tokenize_result(TextMateTokenizeResult* result);
 // Free tokenize result2
 TEXTMATE_API void textmate_free_tokenize_result2(TextMateTokenizeResult2* result);
 
+// Batch tokenize multiple lines (Phase 2 optimization)
+typedef struct {
+    TextMateTokenizeResult** lineResults;  // Array of results per line
+    int32_t lineCount;
+} TextMateTokenizeMultiLinesResult;
+
+// Tokenize multiple lines in a single call (reduces PInvoke overhead)
+TEXTMATE_API TextMateTokenizeMultiLinesResult* textmate_tokenize_lines(
+    TextMateGrammar grammar,
+    const char** lines,          // Array of line strings
+    int32_t lineCount,           // Number of lines
+    TextMateStateStack initialState
+);
+
+// Free batch tokenize result
+TEXTMATE_API void textmate_free_tokenize_lines_result(TextMateTokenizeMultiLinesResult* result);
+
 // Get scope name from grammar
 TEXTMATE_API const char* textmate_grammar_get_scope_name(TextMateGrammar grammar);
 

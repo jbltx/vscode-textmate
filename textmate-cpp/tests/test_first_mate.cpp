@@ -109,15 +109,9 @@ public:
 
     // Get grammar by scope name (called by Registry loadGrammar callback)
     IRawGrammar* getGrammarByScope(const std::string& scopeName) {
-        std::cerr << "DEBUG GrammarHolder::getGrammarByScope called for: " << scopeName << std::endl;
         auto it = grammarByScope.find(scopeName);
         if (it != grammarByScope.end()) {
-            std::cerr << "DEBUG   Found in holder!" << std::endl;
             return it->second;
-        }
-        std::cerr << "DEBUG   NOT found in holder. Available grammars:" << std::endl;
-        for (const auto& pair : grammarByScope) {
-            std::cerr << "DEBUG     - " << pair.first << std::endl;
         }
         return nullptr;
     }

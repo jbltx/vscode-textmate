@@ -1,0 +1,237 @@
+using System;
+using System.IO;
+using System.Text.Json;
+using System.Collections.Generic;
+using System.Linq;
+using System.Diagnostics;
+using TextMateSharp;
+
+class Program
+{
+    class TestToken
+    {
+        public string value { get; set; } = "";
+        public List<string> scopes { get; set; } = new();
+    }
+
+    class TestLine
+    {
+        public string line { get; set; } = "";
+        public List<TestToken> tokens { get; set; } = new();
+    }
+
+    class TestCase
+    {
+        public string desc { get; set; } = "";
+        public List<string> grammars { get; set; } = new();
+        public string? grammarPath { get; set; }
+        public string? grammarScopeName { get; set; }
+        public List<string>? grammarInjections { get; set; }
+        public List<TestLine> lines { get; set; } = new();
+    }
+
+    class BenchmarkResult
+    {
+        public string TestName { get; set; } = "";
+        public int LineCount { get; set; }
+        public int TokenCount { get; set; }
+        public long ElapsedMs { get; set; }
+        public double LinesPerSecond => LineCount / (ElapsedMs / 1000.0);
+        public double TokensPerSecond => TokenCount / (ElapsedMs / 1000.0);
+    }
+
+    static int Main(string[] args)
+    {
+        Console.WriteLine("TextMate FirstMate Benchmark (C#)");
+        Console.WriteLine("==================================\n");
+
+        string testsPath = args.Length > 0 ? args[0] : "../../test-cases/first-mate/tests.json";
+        string fixturesBasePath = Path.GetDirectoryName(Path.GetFullPath(testsPath))!;
+
+        if (!File.Exists(testsPath))
+        {
+            Console.WriteLine($"Error: Test file not found: {testsPath}");
+            return 1;
+        }
+
+        // Number of iterations for more stable results
+        int warmupRuns = 2;
+        int benchmarkRuns = 5;
+
+        try
+        {
+            // Parse test cases
+            var jsonText = File.ReadAllText(testsPath);
+            var testCases = JsonSerializer.Deserialize<List<TestCase>>(jsonText, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (testCases == null || testCases.Count == 0)
+            {
+                Console.WriteLine("No test cases found!");
+                return 1;
+            }
+
+            Console.WriteLine($"Benchmarking {testCases.Count} test case(s)...");
+            Console.WriteLine($"Warmup runs: {warmupRuns}, Benchmark runs: {benchmarkRuns}\n");
+
+            var results = new List<BenchmarkResult>();
+
+            foreach (var testCase in testCases)
+            {
+                string testName = !string.IsNullOrEmpty(testCase.desc) ? testCase.desc : "Unnamed test";
+
+                // Warmup runs
+                for (int i = 0; i < warmupRuns; i++)
+                {
+                    RunTestCase(testCase, fixturesBasePath, out _, out _);
+                }
+
+                // Benchmark runs
+                var times = new List<long>();
+                int lineCount = 0;
+                int tokenCount = 0;
+
+                for (int i = 0; i < benchmarkRuns; i++)
+                {
+                    var elapsed = RunTestCase(testCase, fixturesBasePath, out lineCount, out tokenCount);
+                    times.Add(elapsed);
+                }
+
+                // Use median time to reduce impact of outliers
+                times.Sort();
+                long medianTime = times[times.Count / 2];
+
+                results.Add(new BenchmarkResult
+                {
+                    TestName = testName,
+                    LineCount = lineCount,
+                    TokenCount = tokenCount,
+                    ElapsedMs = medianTime
+                });
+            }
+
+            // Display results
+            Console.WriteLine("\n" + new string('=', 100));
+            Console.WriteLine($"{"Test Name",-50} {"Lines",-10} {"Tokens",-10} {"Time (ms)",-12} {"Lines/s",-12} {"Tokens/s",-12}");
+            Console.WriteLine(new string('=', 100));
+
+            long totalTime = 0;
+            int totalLines = 0;
+            int totalTokens = 0;
+
+            foreach (var result in results)
+            {
+                Console.WriteLine(
+                    $"{result.TestName,-50} {result.LineCount,-10} {result.TokenCount,-10} " +
+                    $"{result.ElapsedMs,-12} {result.LinesPerSecond,-12:F0} {result.TokensPerSecond,-12:F0}"
+                );
+                totalTime += result.ElapsedMs;
+                totalLines += result.LineCount;
+                totalTokens += result.TokenCount;
+            }
+
+            Console.WriteLine(new string('=', 100));
+            Console.WriteLine($"{"TOTAL",-50} {totalLines,-10} {totalTokens,-10} {totalTime,-12}");
+            Console.WriteLine(new string('=', 100));
+
+            double overallLinesPerSec = totalLines / (totalTime / 1000.0);
+            double overallTokensPerSec = totalTokens / (totalTime / 1000.0);
+
+            Console.WriteLine($"\nOverall Performance:");
+            Console.WriteLine($"  Lines/sec:  {overallLinesPerSec:F0}");
+            Console.WriteLine($"  Tokens/sec: {overallTokensPerSec:F0}");
+            Console.WriteLine();
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fatal error: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            return 1;
+        }
+    }
+
+    static long RunTestCase(TestCase testCase, string fixturesBasePath, out int lineCount, out int tokenCount)
+    {
+        using var textMate = new TextMate();
+
+        // Step 1: Add ALL grammars to the registry first (so dependencies can be resolved)
+        string? mainGrammarScopeName = testCase.grammarScopeName;
+        var grammarScopeByPath = new Dictionary<string, string>();
+
+        foreach (var grammarPath in testCase.grammars)
+        {
+            string fullGrammarPath = Path.Combine(fixturesBasePath, grammarPath);
+            if (!File.Exists(fullGrammarPath))
+            {
+                throw new Exception($"Grammar file not found: {fullGrammarPath}");
+            }
+
+            // Read the grammar JSON to get its scope name
+            var grammarJson = File.ReadAllText(fullGrammarPath);
+            var grammarDoc = JsonDocument.Parse(grammarJson);
+            string scopeName = grammarDoc.RootElement.GetProperty("scopeName").GetString()!;
+
+            // Add grammar to registry
+            textMate.AddGrammarFromJson(grammarJson);
+
+            grammarScopeByPath[grammarPath] = scopeName;
+
+            // If this is the main grammar path, save its scope name
+            if (testCase.grammarPath == grammarPath && string.IsNullOrEmpty(mainGrammarScopeName))
+            {
+                mainGrammarScopeName = scopeName;
+            }
+        }
+
+        // Step 2: Determine the main grammar scope name
+        if (string.IsNullOrEmpty(mainGrammarScopeName))
+        {
+            // Use the first grammar if no specific one was indicated
+            if (testCase.grammars.Count > 0)
+            {
+                mainGrammarScopeName = grammarScopeByPath[testCase.grammars[0]];
+            }
+            else
+            {
+                throw new Exception("No grammars specified in test case");
+            }
+        }
+
+        // Step 3: Set grammar injections if specified
+        if (testCase.grammarInjections != null && testCase.grammarInjections.Count > 0)
+        {
+            textMate.SetInjections(mainGrammarScopeName, testCase.grammarInjections.ToArray());
+        }
+
+        // Step 4: Load the main grammar by scope name through the registry
+        var grammar = textMate.LoadGrammar(mainGrammarScopeName);
+
+        // Step 5: Benchmark tokenization
+        var sw = Stopwatch.StartNew();
+        tokenCount = RunTokenizationBenchmark(grammar, testCase.lines, out lineCount);
+        sw.Stop();
+
+        return sw.ElapsedMilliseconds;
+    }
+
+    static int RunTokenizationBenchmark(Grammar grammar, List<TestLine> testLines, out int lineCount)
+    {
+        var state = TextMate.GetInitialState();
+        int totalTokens = 0;
+
+        for (int lineIndex = 0; lineIndex < testLines.Count; lineIndex++)
+        {
+            var testLine = testLines[lineIndex];
+            var result = grammar.TokenizeLine(testLine.line, state);
+            state = result.RuleStack!;
+            totalTokens += result.Tokens.Count;
+        }
+
+        lineCount = testLines.Count;
+        return totalTokens;
+    }
+}

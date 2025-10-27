@@ -1,35 +1,19 @@
 cmake_minimum_required(VERSION 3.10)
 
-# Test executable
-add_executable(test_grammar
-    test_grammar.cpp
-)
-
-# Link against the library
-target_link_libraries(test_grammar
-    vscode-textmate-cpp
-)
-
-# Add test
-add_test(NAME GrammarTest COMMAND test_grammar)
-
-# Set output directory
-set_target_properties(test_grammar PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
+# RapidJSON include directory
+set(RAPIDJSON_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/include")
 
 # First-Mate test suite executable
 add_executable(test_first_mate
     test_first_mate.cpp
 )
 
-# Link against the library and RapidJSON
+# Link against the library
 target_link_libraries(test_first_mate
     vscode-textmate-cpp
 )
 
-# Include RapidJSON from ThirdParty folder
-set(RAPIDJSON_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/include")
+# Include RapidJSON
 if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
     target_include_directories(test_first_mate PRIVATE ${RAPIDJSON_INCLUDE_DIR})
     message(STATUS "Using RapidJSON from: ${RAPIDJSON_INCLUDE_DIR}")
@@ -45,140 +29,17 @@ set_target_properties(test_first_mate PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-# Phase 1 test executable
-add_executable(test_phase1_registration
-    test_phase1_registration.cpp
+# Benchmark executable for large files
+add_executable(benchmark_large
+    benchmark_large.cpp
 )
 
 # Link against the library
-target_link_libraries(test_phase1_registration
+target_link_libraries(benchmark_large
     vscode-textmate-cpp
 )
 
-# Add test
-add_test(NAME Phase1RegistrationTests COMMAND test_phase1_registration)
-
 # Set output directory
-set_target_properties(test_phase1_registration PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Phase 2 test executable
-add_executable(test_phase2_rule_factory
-    test_phase2_rule_factory.cpp
-)
-
-# Link against the library
-target_link_libraries(test_phase2_rule_factory
-    vscode-textmate-cpp
-)
-
-# Add test
-add_test(NAME Phase2RuleFactoryTests COMMAND test_phase2_rule_factory)
-
-# Set output directory
-set_target_properties(test_phase2_rule_factory PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Phase 3 test executable
-add_executable(test_phase3_grammar_init
-    test_phase3_grammar_init.cpp
-)
-
-# Link against the library
-target_link_libraries(test_phase3_grammar_init
-    vscode-textmate-cpp
-)
-
-# Include RapidJSON for parsing
-set(RAPIDJSON_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/include")
-if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
-    target_include_directories(test_phase3_grammar_init PRIVATE ${RAPIDJSON_INCLUDE_DIR})
-endif()
-
-# Add test
-add_test(NAME Phase3GrammarInitTests COMMAND test_phase3_grammar_init)
-
-# Set output directory
-set_target_properties(test_phase3_grammar_init PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Phase 4 test executable
-add_executable(test_phase4_memory
-    test_phase4_memory.cpp
-)
-
-# Link against the library
-target_link_libraries(test_phase4_memory
-    vscode-textmate-cpp
-)
-
-# Add test
-add_test(NAME Phase4MemoryTests COMMAND test_phase4_memory)
-
-# Set output directory
-set_target_properties(test_phase4_memory PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Debug test for TEST #35
-add_executable(test_debug_35
-    test_debug_35.cpp
-)
-
-# Link against the library
-target_link_libraries(test_debug_35
-    vscode-textmate-cpp
-)
-
-# Include RapidJSON for parsing
-if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
-    target_include_directories(test_debug_35 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
-endif()
-
-# Set output directory
-set_target_properties(test_debug_35 PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Debug test for TEST #42
-add_executable(test_debug_42
-    test_debug_42.cpp
-)
-
-# Link against the library
-target_link_libraries(test_debug_42
-    vscode-textmate-cpp
-)
-
-# Include RapidJSON for parsing
-if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
-    target_include_directories(test_debug_42 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
-endif()
-
-# Set output directory
-set_target_properties(test_debug_42 PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-)
-
-# Debug test for TEST #47 (Injection test)
-add_executable(test_debug_47
-    test_debug_47.cpp
-)
-
-# Link against the library
-target_link_libraries(test_debug_47
-    vscode-textmate-cpp
-)
-
-# Include RapidJSON for parsing
-if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
-    target_include_directories(test_debug_47 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
-endif()
-
-# Set output directory
-set_target_properties(test_debug_47 PROPERTIES
+set_target_properties(benchmark_large PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )

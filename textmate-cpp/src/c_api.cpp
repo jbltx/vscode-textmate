@@ -301,6 +301,76 @@ TEXTMATE_API void textmate_free_tokenize_result2(TextMateTokenizeResult2* result
     }
 }
 
+// Batch tokenize multiple lines (Phase 2 optimization)
+TEXTMATE_API TextMateTokenizeMultiLinesResult* textmate_tokenize_lines(
+    TextMateGrammar grammar,
+    const char** lines,
+    int32_t lineCount,
+    TextMateStateStack initialState
+) {
+    if (!grammar || !lines || lineCount <= 0) {
+        return nullptr;
+    }
+
+    try {
+        Grammar* g = static_cast<Grammar*>(grammar);
+        StateStack* state = static_cast<StateStack*>(initialState);
+
+        // Allocate result structure
+        TextMateTokenizeMultiLinesResult* batchResult = new TextMateTokenizeMultiLinesResult();
+        batchResult->lineCount = lineCount;
+        batchResult->lineResults = new TextMateTokenizeResult*[lineCount];
+
+        // Tokenize each line, propagating state
+        for (int32_t i = 0; i < lineCount; i++) {
+            std::string lineText(lines[i]);
+            auto result = g->tokenizeLine(lineText, state);
+
+            // Update state for next line
+            state = result.ruleStack;
+
+            // Allocate result for this line
+            TextMateTokenizeResult* lineResult = new TextMateTokenizeResult();
+            lineResult->tokenCount = result.tokens.size();
+            lineResult->stoppedEarly = result.stoppedEarly ? 1 : 0;
+            lineResult->ruleStack = static_cast<TextMateStateStack>(result.ruleStack);
+
+            // Allocate and populate tokens
+            lineResult->tokens = new TextMateToken[lineResult->tokenCount];
+            for (size_t j = 0; j < result.tokens.size(); j++) {
+                const auto& token = result.tokens[j];
+                lineResult->tokens[j].startIndex = token.startIndex;
+                lineResult->tokens[j].endIndex = token.endIndex;
+                lineResult->tokens[j].scopeDepth = token.scopes.size();
+
+                // Allocate scope array
+                lineResult->tokens[j].scopes = new char*[token.scopes.size()];
+                for (size_t k = 0; k < token.scopes.size(); k++) {
+                    lineResult->tokens[j].scopes[k] = stringToCString(token.scopes[k]);
+                }
+            }
+
+            batchResult->lineResults[i] = lineResult;
+        }
+
+        return batchResult;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+// Free batch tokenize result
+TEXTMATE_API void textmate_free_tokenize_lines_result(TextMateTokenizeMultiLinesResult* result) {
+    if (result) {
+        // Free each line result
+        for (int32_t i = 0; i < result->lineCount; i++) {
+            textmate_free_tokenize_result(result->lineResults[i]);
+        }
+        delete[] result->lineResults;
+        delete result;
+    }
+}
+
 // Get scope name from grammar
 TEXTMATE_API const char* textmate_grammar_get_scope_name(TextMateGrammar grammar) {
     // Not implemented yet - would require adding a getter method to Grammar class

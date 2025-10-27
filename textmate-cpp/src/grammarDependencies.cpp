@@ -115,7 +115,6 @@ void ScopeDependencyProcessor::processQueue() {
     std::queue<AbsoluteRuleReference> currentQ;
     currentQ.swap(Q);
 
-    std::cerr << "DEBUG processQueue: processing " << currentQ.size() << " items" << std::endl;
 
     std::vector<AbsoluteRuleReference> externalRefs;
     std::set<IRawRule*> visitedRules;
@@ -124,20 +123,12 @@ void ScopeDependencyProcessor::processQueue() {
         AbsoluteRuleReference ref = currentQ.front();
         currentQ.pop();
 
-        std::cerr << "DEBUG processQueue: processing ref: " << ref.scopeName;
-        if (!ref.ruleName.empty()) {
-            std::cerr << "#" << ref.ruleName;
-        }
-        std::cerr << std::endl;
-
         // Look up the grammar for this reference
         IRawGrammar* grammar = _repo->lookup(ref.scopeName);
         if (!grammar) {
-            std::cerr << "DEBUG processQueue:   grammar not found" << std::endl;
             continue;
         }
 
-        std::cerr << "DEBUG processQueue:   found grammar with " << (grammar->patterns ? grammar->patterns->size() : 0) << " patterns" << std::endl;
 
         // Collect external references from this grammar's patterns
         if (grammar->patterns && !grammar->patterns->empty()) {
@@ -146,7 +137,6 @@ void ScopeDependencyProcessor::processQueue() {
 
         // Also scan injections if present
         if (grammar->injections) {
-            std::cerr << "DEBUG processQueue:   scanning injections..." << std::endl;
             for (const auto& injection : *grammar->injections) {
                 if (injection.second->patterns) {
                     collectExternalReferencesInRules(*injection.second->patterns, grammar, grammar, externalRefs, visitedRules);
@@ -155,7 +145,6 @@ void ScopeDependencyProcessor::processQueue() {
         }
     }
 
-    std::cerr << "DEBUG processQueue: found " << externalRefs.size() << " external refs" << std::endl;
 
     // Add new external references to the queue if not seen before
     for (const AbsoluteRuleReference& extRef : externalRefs) {
@@ -164,18 +153,14 @@ void ScopeDependencyProcessor::processQueue() {
             key += "#" + extRef.ruleName;
         }
 
-        std::cerr << "DEBUG processQueue:   checking external ref: " << key << std::endl;
 
         if (_seenScopes.find(key) == _seenScopes.end()) {
-            std::cerr << "DEBUG processQueue:     adding to queue" << std::endl;
             _seenScopes.insert(key);
             Q.push(extRef);
         } else {
-            std::cerr << "DEBUG processQueue:     already seen" << std::endl;
         }
     }
 
-    std::cerr << "DEBUG processQueue: final queue size: " << Q.size() << std::endl;
 }
 
 } // namespace vscode_textmate

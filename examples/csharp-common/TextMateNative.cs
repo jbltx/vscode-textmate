@@ -118,6 +118,27 @@ public static class TextMateNative
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void textmate_free_tokenize_result2(IntPtr result);
 
+    // Batch tokenize result structure (Phase 2 optimization)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TextMateTokenizeMultiLinesResult
+    {
+        public IntPtr LineResults; // TextMateTokenizeResult**
+        public int LineCount;
+    }
+
+    // Batch tokenize multiple lines (Phase 2 optimization)
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr textmate_tokenize_lines(
+        TextMateGrammar grammar,
+        IntPtr[] lines,  // const char**
+        int lineCount,
+        TextMateStateStack initialState
+    );
+
+    // Free batch tokenize result
+    [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void textmate_free_tokenize_lines_result(IntPtr result);
+
     // Get scope name from grammar
     [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr textmate_grammar_get_scope_name(TextMateGrammar grammar);

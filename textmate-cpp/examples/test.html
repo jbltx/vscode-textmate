@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSCode TextMate WASM Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+        }
+        .container {
+            margin: 20px 0;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            padding: 10px;
+            background: #252526;
+            color: #d4d4d4;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 10px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        .token {
+            padding: 2px 4px;
+            margin: 2px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+        .token-line {
+            margin: 5px 0;
+            padding: 5px;
+            background: #2d2d30;
+            border-radius: 3px;
+        }
+        .scope {
+            color: #4ec9b0;
+            font-size: 11px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.loading {
+            background: #264f78;
+            color: #9cdcfe;
+        }
+        .status.success {
+            background: #1e3a1e;
+            color: #4ec9b0;
+        }
+        .status.error {
+            background: #5a1d1d;
+            color: #f48771;
+        }
+        .json-output {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #ce9178;
+        }
+    </style>
+</head>
+<body>
+    <h1>VSCode TextMate WASM Demo</h1>
+
+    <div class="status loading" id="status">Loading WASM module...</div>
+
+    <div class="container">
+        <h2>1. Grammar (JSON)</h2>
+        <textarea id="grammar">{
+  "scopeName": "source.example",
+  "patterns": [
+    {
+      "name": "comment.line.example",
+      "match": "//.*$"
+    },
+    {
+      "name": "keyword.control.example",
+      "match": "\\b(if|else|for|while|return)\\b"
+    },
+    {
+      "name": "string.quoted.double.example",
+      "match": "\"([^\"]*)?\""
+    },
+    {
+      "name": "constant.numeric.example",
+      "match": "\\b\\d+\\b"
+    }
+  ]
+}</textarea>
+        <button onclick="loadGrammar()" id="loadBtn" disabled>Load Grammar</button>
+    </div>
+
+    <div class="container">
+        <h2>2. Source Code to Tokenize</h2>
+        <textarea id="sourceCode">// This is a comment
+if (x > 42) {
+    return "hello world";
+}
+for (i = 0; i < 100; i++) {
+    // Another comment
+}</textarea>
+        <button onclick="tokenize()" id="tokenizeBtn" disabled>Tokenize</button>
+    </div>
+
+    <div class="container">
+        <h2>3. Tokenization Result</h2>
+        <div class="output" id="output">
+            <em>Load a grammar and tokenize code to see results...</em>
+        </div>
+    </div>
+
+    <script src="../build-wasm/textmate.js"></script>
+    <script>
+        let module = null;
+        let registry = null;
+        let grammar = null;
+
+        // Initialize WASM module
+        createTextMateModule().then((Module) => {
+            module = Module;
+            document.getElementById('status').className = 'status success';
+            document.getElementById('status').textContent = 'WASM module loaded successfully!';
+            document.getElementById('loadBtn').disabled = false;
+            console.log('TextMate WASM module loaded:', module);
+        }).catch((err) => {
+            document.getElementById('status').className = 'status error';
+            document.getElementById('status').textContent = 'Failed to load WASM module: ' + err.message;
+            console.error('Failed to load WASM module:', err);
+        });
+
+        function loadGrammar() {
+            const grammarText = document.getElementById('grammar').value;
+            const outputDiv = document.getElementById('output');
+
+            try {
+                // Parse JSON to validate
+                const grammarObj = JSON.parse(grammarText);
+
+                // Create registry if not exists
+                if (!registry) {
+                    registry = new module.Registry();
+                    console.log('Created registry:', registry);
+                }
+
+                // Load grammar
+                const grammarHandle = registry.loadGrammarFromContent(
+                    grammarText,
+                    grammarObj.scopeName || 'source.unknown'
+                );
+
+                if (!grammarHandle || grammarHandle === 0) {
+                    throw new Error('Failed to load grammar');
+                }
+
+                grammar = new module.Grammar(grammarHandle);
+                console.log('Loaded grammar:', grammar);
+
+                outputDiv.innerHTML = '<span style="color: #4ec9b0;">✓ Grammar loaded: ' +
+                    grammar.getScopeName() + '</span>';
+
+                document.getElementById('tokenizeBtn').disabled = false;
+                document.getElementById('status').className = 'status success';
+                document.getElementById('status').textContent = 'Grammar loaded: ' + grammar.getScopeName();
+
+            } catch (err) {
+                outputDiv.innerHTML = '<span style="color: #f48771;">✗ Error: ' +
+                    err.message + '</span>';
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').textContent = 'Error loading grammar: ' + err.message;
+                console.error('Grammar loading error:', err);
+            }
+        }
+
+        function tokenize() {
+            if (!grammar) {
+                alert('Please load a grammar first');
+                return;
+            }
+
+            const sourceCode = document.getElementById('sourceCode').value;
+            const outputDiv = document.getElementById('output');
+            const lines = sourceCode.split('\n');
+
+            try {
+                let html = '<h3>Tokenization Results:</h3>';
+                let ruleStack = null;
+
+                lines.forEach((line, lineNum) => {
+                    const result = grammar.tokenizeLine(line, ruleStack);
+                    ruleStack = result.ruleStack;
+
+                    html += `<div class="token-line">`;
+                    html += `<strong>Line ${lineNum + 1}:</strong> <code>${escapeHtml(line)}</code><br>`;
+
+                    result.tokens.forEach((token, tokenIdx) => {
+                        const text = line.substring(token.startIndex, token.endIndex);
+                        const scopes = token.scopes.join(' ');
+                        const color = getColorForScope(token.scopes[token.scopes.length - 1]);
+
+                        html += `<div class="token" style="background: ${color}20; border-left: 3px solid ${color};">`;
+                        html += `<strong>${escapeHtml(text)}</strong> `;
+                        html += `<span class="scope">[${token.startIndex}-${token.endIndex}]</span><br>`;
+                        html += `<span class="scope">${escapeHtml(scopes)}</span>`;
+                        html += `</div>`;
+                    });
+
+                    html += '</div>';
+                });
+
+                outputDiv.innerHTML = html;
+
+                document.getElementById('status').className = 'status success';
+                document.getElementById('status').textContent = `Tokenized ${lines.length} lines successfully!`;
+
+            } catch (err) {
+                outputDiv.innerHTML = '<span style="color: #f48771;">✗ Tokenization error: ' +
+                    err.message + '</span>';
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').textContent = 'Tokenization error: ' + err.message;
+                console.error('Tokenization error:', err);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getColorForScope(scope) {
+            if (!scope) return '#808080';
+
+            if (scope.includes('comment')) return '#6A9955';
+            if (scope.includes('keyword')) return '#C586C0';
+            if (scope.includes('string')) return '#CE9178';
+            if (scope.includes('constant.numeric')) return '#B5CEA8';
+            if (scope.includes('function')) return '#DCDCAA';
+            if (scope.includes('variable')) return '#9CDCFE';
+
+            return '#D4D4D4';
+        }
+    </script>
+</body>
+</html>

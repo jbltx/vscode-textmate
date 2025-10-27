@@ -6,5 +6,8 @@
 /temp/
 /types/
 etc/
-textmate-c/build/
-textmate-cpp/build/
+bin/
+obj/
+runtimes/
+build/
+!/build/
