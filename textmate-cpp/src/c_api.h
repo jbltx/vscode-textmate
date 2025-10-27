@@ -23,6 +23,7 @@ typedef void* TextMateRegistry;
 typedef void* TextMateGrammar;
 typedef void* TextMateStateStack;
 typedef void* TextMateOnigLib;
+typedef void* TextMateTheme;
 
 // Token structure for marshalling
 typedef struct {
@@ -47,6 +48,66 @@ typedef struct {
     TextMateStateStack ruleStack;
     int32_t stoppedEarly;
 } TextMateTokenizeResult2;
+
+// ============================================================================
+// Theme API
+// ============================================================================
+
+// Load theme from JSON file
+// Returns nullptr on error
+TEXTMATE_API TextMateTheme textmate_theme_load_from_file(
+    const char* themePath
+);
+
+// Load theme from JSON string
+// Returns nullptr on error
+TEXTMATE_API TextMateTheme textmate_theme_load_from_json(
+    const char* jsonContent
+);
+
+// Get foreground color for a scope path
+// Returns defaultColor if scope not found
+// Color format: 0xRRGGBBAA (e.g., 0xFF0000FF for opaque red)
+TEXTMATE_API uint32_t textmate_theme_get_foreground(
+    TextMateTheme theme,
+    const char* scopePath,
+    uint32_t defaultColor
+);
+
+// Get background color for a scope path
+// Returns defaultColor if scope not found
+TEXTMATE_API uint32_t textmate_theme_get_background(
+    TextMateTheme theme,
+    const char* scopePath,
+    uint32_t defaultColor
+);
+
+// Get font style flags for a scope
+// Returns defaultStyle if scope not found
+// Font style constants:
+#define TEXTMATE_FONT_STYLE_NONE      0
+#define TEXTMATE_FONT_STYLE_ITALIC    1
+#define TEXTMATE_FONT_STYLE_BOLD      2
+#define TEXTMATE_FONT_STYLE_UNDERLINE 4
+
+TEXTMATE_API int32_t textmate_theme_get_font_style(
+    TextMateTheme theme,
+    const char* scopePath,
+    int32_t defaultStyle
+);
+
+// Get default foreground color for the theme
+TEXTMATE_API uint32_t textmate_theme_get_default_foreground(TextMateTheme theme);
+
+// Get default background color for the theme
+TEXTMATE_API uint32_t textmate_theme_get_default_background(TextMateTheme theme);
+
+// Dispose theme
+TEXTMATE_API void textmate_theme_dispose(TextMateTheme theme);
+
+// ============================================================================
+// Registry and Grammar API
+// ============================================================================
 
 // Initialize Oniguruma library
 TEXTMATE_API TextMateOnigLib textmate_oniglib_create();

@@ -1,12 +1,17 @@
 #include "c_api.h"
 #include "main.h"
 #include "parseRawGrammar.h"
+#include "theme_c_api.h"
 #include <string>
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <cctype>
+#include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 
 using namespace vscode_textmate;
+using namespace rapidjson;
 
 // Helper function to read file contents
 static std::string readFileContents(const char* filepath) {
@@ -24,6 +29,322 @@ static char* stringToCString(const std::string& str) {
     char* cstr = new char[str.length() + 1];
     std::strcpy(cstr, str.c_str());
     return cstr;
+}
+
+// ============================================================================
+// Theme Helper Functions
+// ============================================================================
+
+// Convert hex color string (#RRGGBB or #RRGGBBAA) to uint32_t (0xRRGGBBAA)
+static uint32_t hexColorToUint32(const std::string& hexColor) {
+    if (hexColor.empty() || hexColor[0] != '#') {
+        return 0;
+    }
+
+    std::string hex = hexColor.substr(1);
+
+    // Handle 6-char (#RRGGBB) - add full opacity
+    if (hex.length() == 6) {
+        hex += "FF";
+    }
+    // Handle 8-char (#RRGGBBAA) - convert to RGBA format
+    else if (hex.length() != 8) {
+        return 0;
+    }
+
+    try {
+        uint32_t value = std::stoul(hex, nullptr, 16);
+        // Convert from #RRGGBBAA to 0xRRGGBBAA
+        return value;
+    } catch (...) {
+        return 0;
+    }
+}
+
+// Convert font style string to flags
+static int32_t fontStyleStringToFlags(const std::string& fontStyle) {
+    int32_t flags = TEXTMATE_FONT_STYLE_NONE;
+
+    if (fontStyle.find("italic") != std::string::npos) {
+        flags |= TEXTMATE_FONT_STYLE_ITALIC;
+    }
+    if (fontStyle.find("bold") != std::string::npos) {
+        flags |= TEXTMATE_FONT_STYLE_BOLD;
+    }
+    if (fontStyle.find("underline") != std::string::npos) {
+        flags |= TEXTMATE_FONT_STYLE_UNDERLINE;
+    }
+
+    return flags;
+}
+
+// Parse JSON theme and create Theme object
+static Theme* parseJsonTheme(const std::string& jsonContent) {
+    try {
+        Document doc;
+        doc.Parse(jsonContent.c_str());
+
+        if (doc.HasParseError()) {
+            return nullptr;
+        }
+
+        // Create IRawTheme from JSON
+        auto rawTheme = new IRawTheme();
+
+        // Get theme name
+        if (doc.HasMember("name") && doc["name"].IsString()) {
+            rawTheme->name = new std::string(doc["name"].GetString());
+        }
+
+        // Parse settings array
+        if (doc.HasMember("settings") && doc["settings"].IsArray()) {
+            const auto& settingsArray = doc["settings"];
+
+            for (const auto& settingObj : settingsArray.GetArray()) {
+                if (!settingObj.IsObject()) {
+                    continue;
+                }
+
+                auto setting = new IRawThemeSetting();
+
+                // Get name
+                if (settingObj.HasMember("name") && settingObj["name"].IsString()) {
+                    setting->name = new std::string(settingObj["name"].GetString());
+                }
+
+                // Get scope(s)
+                if (settingObj.HasMember("scope")) {
+                    const auto& scopeVal = settingObj["scope"];
+                    if (scopeVal.IsString()) {
+                        setting->scopeString = scopeVal.GetString();
+                        auto scopeVec = new std::vector<std::string>();
+                        scopeVec->push_back(setting->scopeString);
+                        setting->scope = scopeVec;
+                    } else if (scopeVal.IsArray()) {
+                        setting->scope = new std::vector<std::string>();
+                        for (const auto& scopeStr : scopeVal.GetArray()) {
+                            if (scopeStr.IsString()) {
+                                setting->scope->push_back(scopeStr.GetString());
+                            }
+                        }
+                    }
+                }
+
+                // Get settings object
+                if (settingObj.HasMember("settings") && settingObj["settings"].IsObject()) {
+                    const auto& settingsObj = settingObj["settings"];
+
+                    if (settingsObj.HasMember("fontStyle") && settingsObj["fontStyle"].IsString()) {
+                        setting->settings.fontStyle = new std::string(settingsObj["fontStyle"].GetString());
+                    }
+                    if (settingsObj.HasMember("foreground") && settingsObj["foreground"].IsString()) {
+                        setting->settings.foreground = new std::string(settingsObj["foreground"].GetString());
+                    }
+                    if (settingsObj.HasMember("background") && settingsObj["background"].IsString()) {
+                        setting->settings.background = new std::string(settingsObj["background"].GetString());
+                    }
+                }
+
+                rawTheme->settings.push_back(setting);
+            }
+        }
+
+        // Create Theme from raw theme
+        Theme* theme = Theme::createFromRawTheme(rawTheme);
+        delete rawTheme;
+
+        return theme;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+// ============================================================================
+// Theme C API Implementation
+// ============================================================================
+
+TEXTMATE_API TextMateTheme textmate_theme_load_from_file(const char* themePath) {
+    if (!themePath) {
+        return nullptr;
+    }
+
+    try {
+        std::string content = readFileContents(themePath);
+        if (content.empty()) {
+            return nullptr;
+        }
+
+        Theme* theme = parseJsonTheme(content);
+        if (!theme) {
+            return nullptr;
+        }
+
+        StyleAttributes* defaults = theme->getDefaults();
+        if (!defaults) {
+            delete theme;
+            return nullptr;
+        }
+
+        auto managed = new ManagedTheme(theme, defaults);
+        return static_cast<TextMateTheme>(managed);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+TEXTMATE_API TextMateTheme textmate_theme_load_from_json(const char* jsonContent) {
+    if (!jsonContent) {
+        return nullptr;
+    }
+
+    try {
+        Theme* theme = parseJsonTheme(jsonContent);
+        if (!theme) {
+            return nullptr;
+        }
+
+        StyleAttributes* defaults = theme->getDefaults();
+        if (!defaults) {
+            delete theme;
+            return nullptr;
+        }
+
+        auto managed = new ManagedTheme(theme, defaults);
+        return static_cast<TextMateTheme>(managed);
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+TEXTMATE_API uint32_t textmate_theme_get_foreground(
+    TextMateTheme theme,
+    const char* scopePath,
+    uint32_t defaultColor
+) {
+    if (!theme || !scopePath || !scopePath[0]) {
+        return defaultColor;
+    }
+
+    try {
+        auto managed = static_cast<ManagedTheme*>(theme);
+
+        // For now, just return the default foreground color
+        // TODO: implement proper scope matching with theme trie
+        if (managed->defaults) {
+            auto colorMap = managed->theme->getColorMap();
+            int fgId = managed->defaults->foregroundId;
+
+            if (fgId > 0 && fgId < static_cast<int>(colorMap.size())) {
+                return hexColorToUint32(colorMap[fgId]);
+            }
+        }
+
+        return defaultColor;
+    } catch (...) {
+        return defaultColor;
+    }
+}
+
+TEXTMATE_API uint32_t textmate_theme_get_background(
+    TextMateTheme theme,
+    const char* scopePath,
+    uint32_t defaultColor
+) {
+    if (!theme || !scopePath || !scopePath[0]) {
+        return defaultColor;
+    }
+
+    try {
+        auto managed = static_cast<ManagedTheme*>(theme);
+
+        // For now, just return the default background color
+        // TODO: implement proper scope matching with theme trie
+        if (managed->defaults) {
+            auto colorMap = managed->theme->getColorMap();
+            int bgId = managed->defaults->backgroundId;
+
+            if (bgId > 0 && bgId < static_cast<int>(colorMap.size())) {
+                return hexColorToUint32(colorMap[bgId]);
+            }
+        }
+
+        return defaultColor;
+    } catch (...) {
+        return defaultColor;
+    }
+}
+
+TEXTMATE_API int32_t textmate_theme_get_font_style(
+    TextMateTheme theme,
+    const char* scopePath,
+    int32_t defaultStyle
+) {
+    if (!theme || !scopePath || !scopePath[0]) {
+        return defaultStyle;
+    }
+
+    try {
+        auto managed = static_cast<ManagedTheme*>(theme);
+
+        // For now, just return the default font style
+        // TODO: implement proper scope matching with theme trie
+        if (managed->defaults) {
+            return managed->defaults->fontStyle;
+        }
+
+        return defaultStyle;
+    } catch (...) {
+        return defaultStyle;
+    }
+}
+
+TEXTMATE_API uint32_t textmate_theme_get_default_foreground(TextMateTheme theme) {
+    if (!theme) {
+        return 0xFFFFFFFF;  // White
+    }
+
+    try {
+        auto managed = static_cast<ManagedTheme*>(theme);
+        if (managed->defaults) {
+            auto colorMap = managed->theme->getColorMap();
+            int fgId = managed->defaults->foregroundId;
+
+            if (fgId > 0 && fgId < static_cast<int>(colorMap.size())) {
+                return hexColorToUint32(colorMap[fgId]);
+            }
+        }
+        return 0xFFFFFFFF;  // White fallback
+    } catch (...) {
+        return 0xFFFFFFFF;
+    }
+}
+
+TEXTMATE_API uint32_t textmate_theme_get_default_background(TextMateTheme theme) {
+    if (!theme) {
+        return 0x000000FF;  // Black
+    }
+
+    try {
+        auto managed = static_cast<ManagedTheme*>(theme);
+        if (managed->defaults) {
+            auto colorMap = managed->theme->getColorMap();
+            int bgId = managed->defaults->backgroundId;
+
+            if (bgId > 0 && bgId < static_cast<int>(colorMap.size())) {
+                return hexColorToUint32(colorMap[bgId]);
+            }
+        }
+        return 0x000000FF;  // Black fallback
+    } catch (...) {
+        return 0x000000FF;
+    }
+}
+
+TEXTMATE_API void textmate_theme_dispose(TextMateTheme theme) {
+    if (theme) {
+        auto managed = static_cast<ManagedTheme*>(theme);
+        delete managed;
+    }
 }
 
 // Initialize Oniguruma library
