@@ -317,6 +317,9 @@ public:
         int timeLimit = 0
     ) override;
 
+    // Get the root scope name of this grammar
+    ScopeName getScopeName() const { return _rootScopeName; }
+
 private:
     std::vector<Injection> _collectInjections();
 
