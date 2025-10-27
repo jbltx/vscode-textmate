@@ -118,3 +118,65 @@ add_test(NAME ThemeTests COMMAND test_theme)
 set_target_properties(test_theme PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# Debug theme test executable
+add_executable(test_theme_debug
+    test_theme_debug.cpp
+    ${GTEST_SOURCES}
+)
+
+# Link against the library
+target_link_libraries(test_theme_debug
+    vscode-textmate-cpp
+)
+
+# Include directories for test_theme_debug
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_theme_debug PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+if(EXISTS ${GTEST_INCLUDE_DIR})
+    target_include_directories(test_theme_debug PRIVATE
+        ${GTEST_INCLUDE_DIR}
+        "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/thirdparty/gtest/googletest"
+    )
+endif()
+
+# Add test
+add_test(NAME ThemeDebugTests COMMAND test_theme_debug)
+
+# Set output directory
+set_target_properties(test_theme_debug PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# File theme test executable
+add_executable(test_theme_file
+    test_theme_file.cpp
+    ${GTEST_SOURCES}
+)
+
+# Link against the library
+target_link_libraries(test_theme_file
+    vscode-textmate-cpp
+)
+
+# Include directories for test_theme_file
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_theme_file PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+if(EXISTS ${GTEST_INCLUDE_DIR})
+    target_include_directories(test_theme_file PRIVATE
+        ${GTEST_INCLUDE_DIR}
+        "${CMAKE_SOURCE_DIR}/../ThirdParty/rapidjson/thirdparty/gtest/googletest"
+    )
+endif()
+
+# Add test
+add_test(NAME ThemeFileTests COMMAND test_theme_file)
+
+# Set output directory
+set_target_properties(test_theme_file PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
