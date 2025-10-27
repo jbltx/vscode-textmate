@@ -380,17 +380,25 @@ void handleCaptures(
     std::vector<LocalStackElement> localStack;
     int maxEnd = captureIndices[0].end;
 
+    std::cerr << "DEBUG handleCaptures: captures.size()=" << captures.size()
+              << ", captureIndices.size()=" << captureIndices.size() << std::endl;
+
     for (size_t i = 0; i < len; i++) {
         const CaptureRule* captureRule = captures[i];
         if (captureRule == nullptr) {
             // Not interested
+            std::cerr << "DEBUG handleCaptures: capture[" << i << "] is null, skipping" << std::endl;
             continue;
         }
 
         const IOnigCaptureIndex& captureIndex = captureIndices[i];
 
+        std::cerr << "DEBUG handleCaptures: processing capture[" << i << "] start=" << captureIndex.start
+                  << ", end=" << captureIndex.end << ", length=" << captureIndex.length << std::endl;
+
         if (captureIndex.length == 0) {
             // Nothing really captured
+            std::cerr << "DEBUG handleCaptures: capture[" << i << "] has length 0, skipping" << std::endl;
             continue;
         }
 
@@ -475,6 +483,9 @@ void handleCaptures(
             &captureIndices
         );
 
+        std::cerr << "DEBUG handleCaptures: captureRuleScopeName="
+                  << (captureRuleScopeName ? *captureRuleScopeName : "(null)") << std::endl;
+
         if (captureRuleScopeName != nullptr && !captureRuleScopeName->empty()) {
             // Push
             AttributedScopeStack* base = !localStack.empty()
@@ -485,6 +496,8 @@ void handleCaptures(
             localStack.push_back(
                 LocalStackElement(captureRuleScopesList, captureIndex.end)
             );
+            std::cerr << "DEBUG handleCaptures: pushed scope to localStack, localStack.size()="
+                      << localStack.size() << std::endl;
         }
 
         delete captureRuleScopeName;
@@ -637,6 +650,9 @@ StackElement tokenizeString(
 
             BeginEndRule* beginEndRule = dynamic_cast<BeginEndRule*>(_rule);
             if (beginEndRule) {
+                std::cerr << "DEBUG: BeginEndRule matched, captureIndices[0]: start="
+                          << captureIndices[0].start << ", end=" << captureIndices[0].end
+                          << ", length=" << captureIndices[0].length << std::endl;
                 handleCaptures(
                     grammar,
                     lineText,

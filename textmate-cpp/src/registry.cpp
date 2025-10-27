@@ -1,6 +1,7 @@
 #include "registry.h"
 #include "grammar.h"
 #include "grammarDependencies.h"
+#include <iostream>
 
 namespace vscode_textmate {
 
@@ -172,6 +173,11 @@ Grammar* Registry::addGrammar(
     const EmbeddedLanguagesMap* embeddedLanguages) {
 
     _syncRegistry->addGrammar(rawGrammar, injections.empty() ? nullptr : &injections);
+
+    // Note: Unlike _loadGrammar, addGrammar does NOT automatically load dependencies.
+    // The caller is responsible for ensuring all required grammars are already loaded.
+    // This matches the TypeScript implementation.
+
     return _grammarForScopeName(rawGrammar->scopeName, initialLanguage, embeddedLanguages);
 }
 
@@ -185,9 +191,24 @@ Grammar* Registry::_loadGrammar(
     ScopeDependencyProcessor dependencyProcessor(_syncRegistry, initialScopeName);
 
     while (!dependencyProcessor.Q.empty()) {
-        AbsoluteRuleReference request = dependencyProcessor.Q.front();
-        dependencyProcessor.Q.pop();
-        _loadSingleGrammar(request.scopeName);
+        // Save references to process
+        std::vector<AbsoluteRuleReference> toProcess;
+        while (!dependencyProcessor.Q.empty()) {
+            toProcess.push_back(dependencyProcessor.Q.front());
+            dependencyProcessor.Q.pop();
+        }
+
+        // Load the grammars
+        for (const auto& ref : toProcess) {
+            _loadSingleGrammar(ref.scopeName);
+        }
+
+        // Put references back in queue for processQueue to scan
+        for (const auto& ref : toProcess) {
+            dependencyProcessor.Q.push(ref);
+        }
+
+        // Scan those grammars for dependencies
         dependencyProcessor.processQueue();
     }
 
@@ -217,6 +238,11 @@ void Registry::_doLoadSingleGrammar(const ScopeName& scopeName) {
             injections = _options.getInjections(scopeName);
         }
         _syncRegistry->addGrammar(grammar, injections.empty() ? nullptr : &injections);
+
+        // Also load the injection grammars themselves
+        for (const auto& injectionScopeName : injections) {
+            _loadSingleGrammar(injectionScopeName);
+        }
     }
 }
 

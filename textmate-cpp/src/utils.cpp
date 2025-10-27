@@ -121,6 +121,11 @@ RegexSource::RegexSource(const std::string& regExpSource, RuleId ruleId_)
     // Check for back references
     std::regex backRefPattern("\\\\(\\d+)");
     hasBackReferences = std::regex_search(regExpSource, backRefPattern);
+
+    // Build anchor cache if needed
+    if (hasAnchor) {
+        buildAnchorCache();
+    }
 }
 
 bool RegexSource::hasCaptures(const std::string* regexSource) {
@@ -205,9 +210,88 @@ std::string RegexSource::resolveBackReferences(const std::string& lineText,
     return result;
 }
 
-std::string RegexSource::buildAnchorCache() {
-    // Build anchor cache logic (simplified)
-    return source;
+void RegexSource::buildAnchorCache() {
+    // Build all 4 variants of the anchor cache
+    // A0_G0: \A -> \uFFFF, \G -> \uFFFF (replace with char that never matches)
+    // A0_G1: \A -> \uFFFF, \G -> \G
+    // A1_G0: \A -> \A, \G -> \uFFFF
+    // A1_G1: \A -> \A, \G -> \G
+
+    // Start with copies of the source
+    std::string A0_G0_result;
+    std::string A0_G1_result;
+    std::string A1_G0_result;
+    std::string A1_G1_result;
+
+    A0_G0_result.reserve(source.length());
+    A0_G1_result.reserve(source.length());
+    A1_G0_result.reserve(source.length());
+    A1_G1_result.reserve(source.length());
+
+    for (size_t i = 0; i < source.length(); i++) {
+        char ch = source[i];
+
+        // Default: copy character as-is
+        A0_G0_result += ch;
+        A0_G1_result += ch;
+        A1_G0_result += ch;
+        A1_G1_result += ch;
+
+        if (ch == '\\' && i + 1 < source.length()) {
+            char nextCh = source[i + 1];
+            i++; // Skip the next character in the loop
+
+            if (nextCh == 'A') {
+                // Replace \A based on allowA flag
+                // When allowA=false, replace with \uFFFF (a character that will never match)
+                A0_G0_result += "\uFFFF";  // A=false, G=false
+                A0_G1_result += "\uFFFF";  // A=false, G=true
+                A1_G0_result += 'A';        // A=true, G=false
+                A1_G1_result += 'A';        // A=true, G=true
+            } else if (nextCh == 'G') {
+                // Replace \G based on allowG flag
+                A0_G0_result += "\uFFFF";  // A=false, G=false
+                A0_G1_result += 'G';        // A=false, G=true
+                A1_G0_result += "\uFFFF";  // A=true, G=false
+                A1_G1_result += 'G';        // A=true, G=true
+            } else {
+                // Other escaped characters, keep as-is
+                A0_G0_result += nextCh;
+                A0_G1_result += nextCh;
+                A1_G0_result += nextCh;
+                A1_G1_result += nextCh;
+            }
+        }
+    }
+
+    anchorCache_A0_G0 = A0_G0_result;
+    anchorCache_A0_G1 = A0_G1_result;
+    anchorCache_A1_G0 = A1_G0_result;
+    anchorCache_A1_G1 = A1_G1_result;
+}
+
+std::string RegexSource::resolveAnchors(bool allowA, bool allowG) const {
+    if (!hasAnchor) {
+        return source;
+    }
+
+    if (allowA) {
+        if (allowG) {
+            return anchorCache_A1_G1;
+        } else {
+            return anchorCache_A1_G0;
+        }
+    } else {
+        if (allowG) {
+            return anchorCache_A0_G1;
+        } else {
+            return anchorCache_A0_G0;
+        }
+    }
+}
+
+RegexSource* RegexSource::clone() const {
+    return new RegexSource(source, ruleId);
 }
 
 } // namespace vscode_textmate

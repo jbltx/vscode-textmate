@@ -67,56 +67,57 @@ bool compareScopesArrays(const std::vector<std::string>& expected, const std::ve
     return true;
 }
 
-// Grammar cache
-class GrammarCache {
+// Grammar holder - loads and holds grammars for a test
+class GrammarHolder {
 private:
-    std::map<std::string, IRawGrammar*> grammars;
     std::string basePath;
+    // Map from scope name to raw grammar (owned by this holder)
+    std::map<std::string, IRawGrammar*> grammarByScope;
 
 public:
-    GrammarCache(const std::string& path) : basePath(path) {}
+    GrammarHolder(const std::string& path) : basePath(path) {}
 
-    ~GrammarCache() {
-        for (auto& pair : grammars) {
+    ~GrammarHolder() {
+        // Clean up all loaded grammars
+        for (auto& pair : grammarByScope) {
             delete pair.second;
         }
     }
 
-    IRawGrammar* loadGrammar(const std::string& grammarPath) {
-        // Check cache first
-        if (grammars.find(grammarPath) != grammars.end()) {
-            return grammars[grammarPath];
-        }
-
-        // Load grammar from file
+    // Load a grammar file and add to the map
+    std::string loadGrammar(const std::string& grammarPath) {
         try {
             std::string fullPath = basePath + "/" + grammarPath;
             std::string grammarContent = readFile(fullPath);
 
-            IRawGrammar* grammar = nullptr;
             // Only JSON grammars are supported in C++ implementation
             if (grammarPath.find(".json") != std::string::npos) {
-                grammar = parseJSONGrammar(grammarContent, nullptr);
+                IRawGrammar* grammar = parseJSONGrammar(grammarContent, nullptr);
+                if (grammar) {
+                    std::string scopeName = grammar->scopeName;
+                    grammarByScope[scopeName] = grammar;
+                    return scopeName;
+                }
             } else {
                 std::cerr << "Warning: Only JSON grammars are supported, skipping " << grammarPath << std::endl;
-            }
-
-            if (grammar) {
-                grammars[grammarPath] = grammar;
-                return grammar;
             }
         } catch (const std::exception& e) {
             std::cerr << "Error loading grammar " << grammarPath << ": " << e.what() << std::endl;
         }
-
-        return nullptr;
+        return "";
     }
 
-    IRawGrammar* getGrammar(const std::string& scopeName) {
-        for (auto& pair : grammars) {
-            if (pair.second && pair.second->scopeName == scopeName) {
-                return pair.second;
-            }
+    // Get grammar by scope name (called by Registry loadGrammar callback)
+    IRawGrammar* getGrammarByScope(const std::string& scopeName) {
+        std::cerr << "DEBUG GrammarHolder::getGrammarByScope called for: " << scopeName << std::endl;
+        auto it = grammarByScope.find(scopeName);
+        if (it != grammarByScope.end()) {
+            std::cerr << "DEBUG   Found in holder!" << std::endl;
+            return it->second;
+        }
+        std::cerr << "DEBUG   NOT found in holder. Available grammars:" << std::endl;
+        for (const auto& pair : grammarByScope) {
+            std::cerr << "DEBUG     - " << pair.first << std::endl;
         }
         return nullptr;
     }
@@ -146,114 +147,155 @@ bool testLine(Grammar* grammar,
         *outState = result.ruleStack;
     }
 
-    // Build a map of expected tokens by their value (text content)
-    std::map<std::string, std::vector<std::string>> expectedTokenMap;
+    // Build a vector of expected tokens (filtering out empty tokens like TypeScript does)
+    std::vector<std::pair<std::string, std::vector<std::string>>> expectedTokensList;
 
     for (SizeType i = 0; i < expectedTokens.Size(); i++) {
         const Value& token = expectedTokens[i];
         if (token.HasMember("value") && token.HasMember("scopes")) {
             std::string value = token["value"].GetString();
+            // Skip empty tokens if line is non-empty (matching TypeScript behavior)
+            if (line.length() > 0 && value.length() == 0) {
+                continue;
+            }
             std::vector<std::string> scopes = jsonArrayToStringVector(token["scopes"]);
-            expectedTokenMap[value] = scopes;
+            expectedTokensList.push_back(std::make_pair(value, scopes));
         }
     }
 
-    // Compare tokens
-    for (const auto& token : result.tokens) {
+    // Compare tokens in order (like TypeScript's deepStrictEqual)
+    if (result.tokens.size() != expectedTokensList.size()) {
+        std::cerr << "      Token count mismatch" << std::endl;
+        std::cerr << "        Expected: " << expectedTokensList.size() << " tokens" << std::endl;
+        std::cerr << "        Actual: " << result.tokens.size() << " tokens" << std::endl;
+        std::cerr << "      Actual tokens:" << std::endl;
+        for (size_t i = 0; i < result.tokens.size(); i++) {
+            const auto& token = result.tokens[i];
+            std::string tokenText = line.substr(token.startIndex, token.endIndex - token.startIndex);
+            std::cerr << "        [" << i << "] \"" << tokenText << "\" scopes: ";
+            for (const auto& scope : token.scopes) {
+                std::cerr << scope << " ";
+            }
+            std::cerr << std::endl;
+        }
+        return false;
+    }
+
+    for (size_t i = 0; i < result.tokens.size(); i++) {
+        const auto& token = result.tokens[i];
+        const auto& expected = expectedTokensList[i];
+
         std::string tokenText = line.substr(token.startIndex, token.endIndex - token.startIndex);
 
-        auto it = expectedTokenMap.find(tokenText);
-        if (it != expectedTokenMap.end()) {
-            if (!compareScopesArrays(it->second, token.scopes)) {
-                std::cerr << "      Token \"" << tokenText << "\" has wrong scopes" << std::endl;
-                std::cerr << "        Expected: ";
-                for (const auto& scope : it->second) {
-                    std::cerr << scope << " ";
-                }
-                std::cerr << std::endl;
-                std::cerr << "        Actual: ";
-                for (const auto& scope : token.scopes) {
-                    std::cerr << scope << " ";
-                }
-                std::cerr << std::endl;
-                return false;
-            }
-            tokensChecked++;
+        // Check token value matches
+        if (tokenText != expected.first) {
+            std::cerr << "      Token " << i << " value mismatch" << std::endl;
+            std::cerr << "        Expected: \"" << expected.first << "\"" << std::endl;
+            std::cerr << "        Actual: \"" << tokenText << "\"" << std::endl;
+            return false;
         }
+
+        // Check token scopes match
+        if (!compareScopesArrays(expected.second, token.scopes)) {
+            std::cerr << "      Token " << i << " \"" << tokenText << "\" has wrong scopes" << std::endl;
+            std::cerr << "        Expected: ";
+            for (const auto& scope : expected.second) {
+                std::cerr << scope << " ";
+            }
+            std::cerr << std::endl;
+            std::cerr << "        Actual: ";
+            for (const auto& scope : token.scopes) {
+                std::cerr << scope << " ";
+            }
+            std::cerr << std::endl;
+            return false;
+        }
+
+        tokensChecked++;
     }
 
     return true;
 }
 
 // Run a single test case
-bool runTestCase(const Value& testCase, GrammarCache& cache, IOnigLib* onigLib, int testNum) {
+bool runTestCase(const Value& testCase, GrammarHolder& holder, IOnigLib* onigLib, int testNum) {
     std::string desc = testCase.HasMember("desc") ? testCase["desc"].GetString() : "Unknown";
 
     std::cout << "Running " << desc << "..." << std::endl;
 
     try {
-        // Load all required grammars
-        std::cout << "  Loading grammars..." << std::endl;
+        // Load ALL grammars from the test (matching TypeScript implementation lines 49-56)
+        std::string mainGrammarScope;
+
         if (testCase.HasMember("grammars")) {
-            cache.loadGrammars(testCase["grammars"]);
+            const Value& grammars = testCase["grammars"];
+            for (SizeType i = 0; i < grammars.Size(); i++) {
+                if (grammars[i].IsString()) {
+                    std::string grammarPath = grammars[i].GetString();
+                    std::string scopeName = holder.loadGrammar(grammarPath);
+
+                    // Check if this is the main grammar
+                    if (mainGrammarScope.empty() && testCase.HasMember("grammarPath")) {
+                        if (grammarPath == testCase["grammarPath"].GetString()) {
+                            mainGrammarScope = scopeName;
+                        }
+                    }
+                }
+            }
         }
-        std::cout << "  Grammars loaded" << std::endl;
 
-        // Get the main grammar
-        IRawGrammar* mainGrammar = nullptr;
-
-        if (testCase.HasMember("grammarPath")) {
-            std::string grammarPath = testCase["grammarPath"].GetString();
-            std::cout << "  Loading main grammar from path: " << grammarPath << std::endl;
-            mainGrammar = cache.loadGrammar(grammarPath);
-        } else if (testCase.HasMember("grammarScopeName")) {
-            std::string scopeName = testCase["grammarScopeName"].GetString();
-            std::cout << "  Loading main grammar by scope: " << scopeName << std::endl;
-            mainGrammar = cache.getGrammar(scopeName);
+        // If grammarScopeName is specified, use it
+        if (testCase.HasMember("grammarScopeName")) {
+            mainGrammarScope = testCase["grammarScopeName"].GetString();
         }
 
-        if (!mainGrammar) {
-            std::cerr << "  FAILED: Could not load main grammar" << std::endl;
+        if (mainGrammarScope.empty()) {
+            std::cerr << "  FAILED: No main grammar scope name" << std::endl;
             return false;
         }
 
-        std::cout << "  Main grammar loaded: " << mainGrammar->scopeName << std::endl;
+        std::cout << "  Main grammar scope: " << mainGrammarScope << std::endl;
 
-        // Create registry
-        std::cout << "  Creating registry..." << std::endl;
-        RegistryOptions options;
-        options.onigLib = onigLib;
-        options.loadGrammar = [&cache](const ScopeName& scopeName) -> IRawGrammar* {
-            return cache.getGrammar(scopeName);
-        };
-
-        Registry registry(options);
-        std::cout << "  Registry created" << std::endl;
-
-        std::cout << "  Adding grammar to registry..." << std::endl;
-        Grammar* grammar = registry.addGrammar(mainGrammar);
-        std::cout << "  Grammar added" << std::endl;
-
-        if (!grammar) {
-            std::cerr << "  FAILED: Could not create grammar object" << std::endl;
-            return false;
-        }
-
-        // Process grammar injections if specified
+        // Collect grammar injections if specified
+        std::vector<std::string> grammarInjectionsList;
         if (testCase.HasMember("grammarInjections")) {
             const Value& injections = testCase["grammarInjections"];
             if (injections.IsArray()) {
                 for (SizeType i = 0; i < injections.Size(); i++) {
                     if (injections[i].IsString()) {
-                        std::string injectScope = injections[i].GetString();
-                        IRawGrammar* injectGrammar = cache.getGrammar(injectScope);
-                        if (injectGrammar) {
-                            // Add injection grammar to registry
-                            registry.addGrammar(injectGrammar);
-                        }
+                        grammarInjectionsList.push_back(injections[i].GetString());
                     }
                 }
             }
+        }
+
+        // Create registry with callback that returns from pre-loaded map (matching TS line 63)
+        std::cout << "  Creating registry..." << std::endl;
+        RegistryOptions options;
+        options.onigLib = onigLib;
+        options.loadGrammar = [&holder](const ScopeName& scopeName) -> IRawGrammar* {
+            return holder.getGrammarByScope(scopeName);
+        };
+
+        // Configure getInjections callback (matching TS lines 64-68)
+        options.getInjections = [mainGrammarScope, grammarInjectionsList](const ScopeName& scopeName) -> std::vector<ScopeName> {
+            if (scopeName == mainGrammarScope) {
+                return grammarInjectionsList;
+            }
+            return std::vector<ScopeName>();
+        };
+
+        Registry registry(options);
+        std::cout << "  Registry created" << std::endl;
+
+        // Load the main grammar through the registry (matching TS line 71)
+        std::cout << "  Loading grammar through registry..." << std::endl;
+        Grammar* grammar = registry.loadGrammar(mainGrammarScope);
+        std::cout << "  Grammar loaded" << std::endl;
+
+        if (!grammar) {
+            std::cerr << "  FAILED: Could not create grammar object" << std::endl;
+            return false;
         }
 
         // Test each line
@@ -331,9 +373,6 @@ int main(int argc, char** argv) {
         // Initialize Oniguruma
         IOnigLib* onigLib = new DefaultOnigLib();
 
-        // Create grammar cache
-        GrammarCache cache(testCasesPath);
-
         // Run all tests
         int passed = 0;
         int failed = 0;
@@ -341,7 +380,10 @@ int main(int argc, char** argv) {
         for (SizeType i = 0; i < testsDoc.Size(); i++) {
             std::cout << "Test #" << (i + 1) << ": ";
 
-            if (runTestCase(testsDoc[i], cache, onigLib, i + 1)) {
+            // Create fresh grammar holder for EACH test to ensure complete isolation
+            GrammarHolder holder(testCasesPath);
+
+            if (runTestCase(testsDoc[i], holder, onigLib, i + 1)) {
                 passed++;
             } else {
                 failed++;

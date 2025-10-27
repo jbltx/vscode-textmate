@@ -27,13 +27,13 @@ void test_init_grammar_creates_self_rule() {
     // Create a raw grammar
     IRawGrammar* grammar = new IRawGrammar();
     grammar->scopeName = "test.scope";
-    grammar->patterns = std::vector<IRawRule*>();
+    grammar->patterns = new std::vector<IRawRule*>();
 
     // Add a pattern
     IRawRule* pattern = new IRawRule();
     pattern->match = new std::string("test.*");
     pattern->name = new std::string("keyword.test");
-    grammar->patterns.push_back(pattern);
+    grammar->patterns->push_back(pattern);
 
     std::cout << "  Created raw grammar with scopeName and patterns" << std::endl;
 

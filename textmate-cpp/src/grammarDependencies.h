@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <queue>
+#include <set>
 
 namespace vscode_textmate {
 
@@ -52,7 +53,7 @@ public:
 private:
     SyncRegistry* _repo;
     std::string _initialScopeName;
-    // Would need more internal state
+    std::set<std::string> _seenScopes;
 
 public:
     ScopeDependencyProcessor(SyncRegistry* repo, const std::string& initialScopeName);

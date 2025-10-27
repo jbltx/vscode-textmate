@@ -48,23 +48,20 @@ IRawRepositoryMap::~IRawRepositoryMap() {
     rules.clear();
     std::cerr << "DEBUG: Rules cleared" << std::endl;
 
-    // Check if baseRule and selfRule point to the same object BEFORE deleting anything
-    bool baseIsSameAsSelf = (baseRule == selfRule);
-    std::cerr << "DEBUG: baseIsSameAsSelf=" << baseIsSameAsSelf << std::endl;
+    // IMPORTANT: Only delete selfRule. DO NOT delete baseRule!
+    // When baseRule != selfRule, baseRule points to an external grammar's rule
+    // that is owned by that grammar. Deleting it here would cause a double-free
+    // when the external grammar is destroyed.
+    std::cerr << "DEBUG: baseIsSameAsSelf=" << (baseRule == selfRule) << std::endl;
 
     std::cerr << "DEBUG: Deleting selfRule..." << std::endl;
     deleteIfNotNull(selfRule);
     std::cerr << "DEBUG: selfRule deleted" << std::endl;
 
-    // Don't delete baseRule if it pointed to selfRule (avoid double-free)
-    std::cerr << "DEBUG: Checking baseRule..." << std::endl;
-    if (baseRule != nullptr && !baseIsSameAsSelf) {
-        std::cerr << "DEBUG: Deleting baseRule (was different from selfRule)..." << std::endl;
-        delete baseRule;
-        baseRule = nullptr;
-    } else {
-        std::cerr << "DEBUG: baseRule is nullptr or was same as selfRule, skipping" << std::endl;
-    }
+    // baseRule is NOT owned by this repository, so we don't delete it
+    std::cerr << "DEBUG: baseRule is not owned by this repository, not deleting" << std::endl;
+    baseRule = nullptr;  // Just nullify the pointer
+
     std::cerr << "DEBUG: IRawRepositoryMap destructor finished" << std::endl;
 }
 
@@ -91,13 +88,17 @@ IRawGrammar::~IRawGrammar() {
     deleteIfNotNull(repository);
     std::cerr << "DEBUG: Repository deleted" << std::endl;
 
-    std::cerr << "DEBUG: Deleting patterns, count=" << patterns.size() << std::endl;
-    for (size_t i = 0; i < patterns.size(); i++) {
-        std::cerr << "DEBUG:   Deleting pattern " << i << std::endl;
-        delete patterns[i];
+    // patterns is now a pointer (inherited from IRawRule)
+    if (patterns != nullptr) {
+        std::cerr << "DEBUG: Deleting patterns, count=" << patterns->size() << std::endl;
+        for (size_t i = 0; i < patterns->size(); i++) {
+            std::cerr << "DEBUG:   Deleting pattern " << i << std::endl;
+            delete (*patterns)[i];
+        }
+        delete patterns;
+        patterns = nullptr;
+        std::cerr << "DEBUG: Patterns deleted" << std::endl;
     }
-    patterns.clear();
-    std::cerr << "DEBUG: Patterns deleted" << std::endl;
 
     if (injections != nullptr) {
         std::cerr << "DEBUG: Deleting injections..." << std::endl;

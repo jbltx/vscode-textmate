@@ -15,6 +15,10 @@ static std::string* getStringPtr(const Value& val) {
     return nullptr;
 }
 
+// Forward declarations
+static IRawRule* parseRule(const Value& ruleObj);
+static std::vector<IRawRule*>* parsePatterns(const Value& patternsArray);
+
 // Helper function to parse captures
 static IRawCaptures* parseCaptures(const Value& capturesObj) {
     if (!capturesObj.IsObject()) {
@@ -32,8 +36,12 @@ static IRawCaptures* parseCaptures(const Value& capturesObj) {
             if (ruleObj.HasMember("name") && ruleObj["name"].IsString()) {
                 rule->name = getStringPtr(ruleObj["name"]);
             }
+            if (ruleObj.HasMember("contentName") && ruleObj["contentName"].IsString()) {
+                rule->contentName = getStringPtr(ruleObj["contentName"]);
+            }
             if (ruleObj.HasMember("patterns") && ruleObj["patterns"].IsArray()) {
-                // Recursively parse patterns if needed
+                // Parse patterns for this capture
+                rule->patterns = parsePatterns(ruleObj["patterns"]);
             }
         }
 
@@ -42,9 +50,6 @@ static IRawCaptures* parseCaptures(const Value& capturesObj) {
 
     return captures;
 }
-
-// Forward declaration
-static IRawRule* parseRule(const Value& ruleObj);
 
 // Helper function to parse patterns array
 static std::vector<IRawRule*>* parsePatterns(const Value& patternsArray) {
@@ -204,9 +209,11 @@ IRawGrammar* parseJSONGrammar(const std::string& content, const std::string* fil
     // Parse patterns (required)
     if (doc.HasMember("patterns") && doc["patterns"].IsArray()) {
         const Value& patternsArray = doc["patterns"];
+        // IRawGrammar now inherits from IRawRule, so patterns is a pointer
+        grammar->patterns = new std::vector<IRawRule*>();
         for (SizeType i = 0; i < patternsArray.Size(); i++) {
             if (patternsArray[i].IsObject()) {
-                grammar->patterns.push_back(parseRule(patternsArray[i]));
+                grammar->patterns->push_back(parseRule(patternsArray[i]));
             }
         }
     }

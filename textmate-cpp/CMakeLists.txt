@@ -110,3 +110,7 @@ message(STATUS "vscode-textmate-cpp configuration:")
 message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Source files: ${TEXTMATE_SOURCES}")
+
+# Debug external include program
+add_executable(debug_external_include build/debug_external_include.cpp)
+target_link_libraries(debug_external_include vscode-textmate-cpp)

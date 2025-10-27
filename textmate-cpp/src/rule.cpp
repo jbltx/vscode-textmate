@@ -24,7 +24,9 @@ void CompiledRule::dispose() {
 // RegExpSourceList implementation
 
 RegExpSourceList::RegExpSourceList()
-    : _hasAnchors(false), _cached(nullptr) {
+    : _hasAnchors(false), _cached(nullptr),
+      _anchorCache_A0_G0(nullptr), _anchorCache_A0_G1(nullptr),
+      _anchorCache_A1_G0(nullptr), _anchorCache_A1_G1(nullptr) {
 }
 
 RegExpSourceList::~RegExpSourceList() {
@@ -47,7 +49,11 @@ void RegExpSourceList::unshift(RegexSource* item) {
 
 void RegExpSourceList::setSource(int index, const std::string& newSource) {
     if (index >= 0 && index < static_cast<int>(_items.size())) {
-        _items[index]->source = newSource;
+        if (_items[index]->source != newSource) {
+            // Bust the cache when source changes
+            dispose();
+            _items[index]->source = newSource;
+        }
     }
 }
 
@@ -56,10 +62,6 @@ int RegExpSourceList::length() const {
 }
 
 CompiledRule* RegExpSourceList::compile(IOnigLib* onigLib) {
-    return compileAG(onigLib, false, false);
-}
-
-CompiledRule* RegExpSourceList::compileAG(IOnigLib* onigLib, bool allowA, bool allowG) {
     if (!_cached) {
         std::vector<std::string> sources;
         for (auto* item : _items) {
@@ -76,11 +78,75 @@ CompiledRule* RegExpSourceList::compileAG(IOnigLib* onigLib, bool allowA, bool a
     return _cached;
 }
 
+CompiledRule* RegExpSourceList::compileAG(IOnigLib* onigLib, bool allowA, bool allowG) {
+    // Check if we need to resolve anchors
+    if (!_hasAnchors) {
+        // No anchors, use the cached compile
+        return compile(onigLib);
+    }
+
+    // Cache the compiled rules for different allowA/allowG combinations
+    CompiledRule** cacheSlot = nullptr;
+    if (allowA) {
+        if (allowG) {
+            cacheSlot = &_anchorCache_A1_G1;
+        } else {
+            cacheSlot = &_anchorCache_A1_G0;
+        }
+    } else {
+        if (allowG) {
+            cacheSlot = &_anchorCache_A0_G1;
+        } else {
+            cacheSlot = &_anchorCache_A0_G0;
+        }
+    }
+
+    if (*cacheSlot != nullptr) {
+        return *cacheSlot;
+    }
+
+    // Create and cache the compiled rule
+    std::vector<std::string> sources;
+    for (auto* item : _items) {
+        sources.push_back(item->resolveAnchors(allowA, allowG));
+    }
+
+    CompiledRule* result = new CompiledRule();
+    result->scanner = onigLib->createOnigScanner(sources);
+
+    for (auto* item : _items) {
+        result->rules.push_back(item->ruleId);
+    }
+
+    *cacheSlot = result;
+    return result;
+}
+
 void RegExpSourceList::dispose() {
     if (_cached) {
         _cached->dispose();
         delete _cached;
         _cached = nullptr;
+    }
+    if (_anchorCache_A0_G0) {
+        _anchorCache_A0_G0->dispose();
+        delete _anchorCache_A0_G0;
+        _anchorCache_A0_G0 = nullptr;
+    }
+    if (_anchorCache_A0_G1) {
+        _anchorCache_A0_G1->dispose();
+        delete _anchorCache_A0_G1;
+        _anchorCache_A0_G1 = nullptr;
+    }
+    if (_anchorCache_A1_G0) {
+        _anchorCache_A1_G0->dispose();
+        delete _anchorCache_A1_G0;
+        _anchorCache_A1_G0 = nullptr;
+    }
+    if (_anchorCache_A1_G1) {
+        _anchorCache_A1_G1->dispose();
+        delete _anchorCache_A1_G1;
+        _anchorCache_A1_G1 = nullptr;
     }
 }
 
@@ -163,9 +229,9 @@ MatchRule::MatchRule(ILocation* location_, RuleId id_,
 }
 
 MatchRule::~MatchRule() {
-    for (auto* capture : captures) {
-        delete capture;
-    }
+    // Note: CaptureRules are now registered with the Grammar and will be
+    // deleted by the Grammar's dispose() method. We should NOT delete them here
+    // to avoid double-free.
 }
 
 void MatchRule::dispose() {
@@ -268,12 +334,10 @@ BeginEndRule::BeginEndRule(ILocation* location_, RuleId id_,
 }
 
 BeginEndRule::~BeginEndRule() {
-    for (auto* capture : beginCaptures) {
-        delete capture;
-    }
-    for (auto* capture : endCaptures) {
-        delete capture;
-    }
+    // Note: CaptureRules are now registered with the Grammar and will be
+    // deleted by the Grammar's dispose() method. We should NOT delete them here
+    // to avoid double-free.
+    // The beginCaptures and endCaptures vectors just hold pointers, not ownership.
 }
 
 void BeginEndRule::dispose() {
@@ -324,7 +388,9 @@ RegExpSourceList* BeginEndRule::_getCachedCompiledPatterns(IRuleRegistry* gramma
             rule->collectPatterns(grammar, _cachedCompiledPatterns);
         }
 
-        RegexSource* endPattern = new RegexSource(_end.source, _end.ruleId);
+        // Clone the end pattern if it has back-references to avoid sharing
+        // the same RegexSource across multiple concurrent rule instances
+        RegexSource* endPattern = _end.hasBackReferences ? _end.clone() : new RegexSource(_end.source, _end.ruleId);
         if (applyEndPatternLast) {
             _cachedCompiledPatterns->push(endPattern);
         } else {
@@ -360,12 +426,9 @@ BeginWhileRule::BeginWhileRule(ILocation* location_, RuleId id_,
 }
 
 BeginWhileRule::~BeginWhileRule() {
-    for (auto* capture : beginCaptures) {
-        delete capture;
-    }
-    for (auto* capture : whileCaptures) {
-        delete capture;
-    }
+    // Note: CaptureRules are now registered with the Grammar and will be
+    // deleted by the Grammar's dispose() method. We should NOT delete them here
+    // to avoid double-free.
 }
 
 void BeginWhileRule::dispose() {
@@ -436,7 +499,9 @@ RegExpSourceList* BeginWhileRule::_getCachedCompiledWhilePatterns(IOnigLib* onig
                                                                   const std::string& whileRegexSource) {
     if (!_cachedCompiledWhilePatterns) {
         _cachedCompiledWhilePatterns = new RegExpSourceList();
-        RegexSource* whilePattern = new RegexSource(_while.source, _while.ruleId);
+        // Clone the while pattern if it has back-references to avoid sharing
+        // the same RegexSource across multiple concurrent rule instances
+        RegexSource* whilePattern = _while.hasBackReferences ? _while.clone() : new RegexSource(_while.source, _while.ruleId);
         _cachedCompiledWhilePatterns->push(whilePattern);
     }
 
@@ -453,7 +518,8 @@ Rule* RuleFactory::createCaptureRule(IRuleFactoryHelper* helper, ILocation* loca
                                      const std::string* name, const std::string* contentName,
                                      RuleId retokenizeCapturedWithRuleId) {
     CaptureRule* rule = new CaptureRule(location, ruleIdFromNumber(-1), name, contentName, retokenizeCapturedWithRuleId);
-    helper->registerRule(rule);
+    RuleId registeredId = helper->registerRule(rule);
+    rule->id = registeredId;  // Update the rule's ID with the registered ID
     return rule;
 }
 
@@ -481,10 +547,9 @@ RuleId RuleFactory::getCompiledRuleId(IRawRule* desc, IRuleFactoryHelper* helper
             _compileCaptures(desc->captures, helper, repository)
         );
     } else if (desc->begin == nullptr) {
-        if (desc->repository) {
-            // Merge repositories
-            // Simplified: just use the desc repository
-        }
+        // Note: In TypeScript, repositories are merged here using mergeObjects.
+        // In C++, repository resolution happens during pattern compilation via
+        // the passed repository parameter, so explicit merging isn't needed.
         std::vector<IRawRule*>* patterns = desc->patterns;
         if (!patterns && desc->include) {
             patterns = new std::vector<IRawRule*>();
@@ -565,13 +630,15 @@ std::vector<CaptureRule*> RuleFactory::_compileCaptures(IRawCaptures* captures,
             retokenizeCapturedWithRuleId = getCompiledRuleId(pair.second, helper, repository);
         }
 
-        result[numericCaptureId] = new CaptureRule(
+        // Use createCaptureRule to properly register the capture rule
+        Rule* captureRule = createCaptureRule(
+            helper,
             pair.second->vscodeTextmateLocation,
-            ruleIdFromNumber(-1),
             pair.second->name,
             pair.second->contentName,
             retokenizeCapturedWithRuleId
         );
+        result[numericCaptureId] = dynamic_cast<CaptureRule*>(captureRule);
     }
 
     return result;

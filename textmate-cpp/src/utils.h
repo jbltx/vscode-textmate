@@ -45,8 +45,10 @@ public:
     RuleId ruleId;
     bool hasAnchor;
     bool hasBackReferences;
-    std::string anchorCache_A;
-    std::string anchorCache_G;
+    std::string anchorCache_A0_G0;
+    std::string anchorCache_A0_G1;
+    std::string anchorCache_A1_G0;
+    std::string anchorCache_A1_G1;
 
     RegexSource(const std::string& regExpSource, RuleId ruleId_);
 
@@ -58,7 +60,10 @@ public:
     std::string resolveBackReferences(const std::string& lineText,
                                       const std::vector<IOnigCaptureIndex>& captureIndices);
 
-    std::string buildAnchorCache();
+    void buildAnchorCache();
+    std::string resolveAnchors(bool allowA, bool allowG) const;
+
+    RegexSource* clone() const;
 };
 
 // CachedFn template class

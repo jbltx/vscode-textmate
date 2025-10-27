@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
             if (grammar->name) {
                 std::cout << "   Name: " << *grammar->name << std::endl;
             }
-            std::cout << "   Patterns count: " << grammar->patterns.size() << std::endl;
+            std::cout << "   Patterns count: " << (grammar->patterns ? grammar->patterns->size() : 0) << std::endl;
         } else {
             std::cerr << "   ERROR: Failed to parse grammar" << std::endl;
             return 1;

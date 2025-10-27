@@ -25,7 +25,7 @@ void test_allocate_rule_id() {
     // Create a minimal grammar for testing
     IRawGrammar* rawGrammar = new IRawGrammar();
     rawGrammar->scopeName = "test.scope";
-    rawGrammar->patterns = std::vector<IRawRule*>();
+    rawGrammar->patterns = new std::vector<IRawRule*>();
 
     IOnigLib* onigLib = new DefaultOnigLib();
 
@@ -93,7 +93,7 @@ void test_set_and_get_rule() {
     // Create a minimal grammar for testing
     IRawGrammar* rawGrammar = new IRawGrammar();
     rawGrammar->scopeName = "test.scope";
-    rawGrammar->patterns = std::vector<IRawRule*>();
+    rawGrammar->patterns = new std::vector<IRawRule*>();
 
     IOnigLib* onigLib = new DefaultOnigLib();
 
@@ -188,7 +188,7 @@ void test_register_rule_still_works() {
 
     IRawGrammar* rawGrammar = new IRawGrammar();
     rawGrammar->scopeName = "test.scope";
-    rawGrammar->patterns = std::vector<IRawRule*>();
+    rawGrammar->patterns = new std::vector<IRawRule*>();
 
     IOnigLib* onigLib = new DefaultOnigLib();
 
@@ -248,7 +248,7 @@ void test_mixed_allocation_methods() {
 
     IRawGrammar* rawGrammar = new IRawGrammar();
     rawGrammar->scopeName = "test.scope";
-    rawGrammar->patterns = std::vector<IRawRule*>();
+    rawGrammar->patterns = new std::vector<IRawRule*>();
 
     IOnigLib* onigLib = new DefaultOnigLib();
 

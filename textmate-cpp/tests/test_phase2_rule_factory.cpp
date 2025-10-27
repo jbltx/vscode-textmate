@@ -23,7 +23,7 @@ using namespace vscode_textmate;
 Grammar* createTestGrammar() {
     IRawGrammar* rawGrammar = new IRawGrammar();
     rawGrammar->scopeName = "test.scope";
-    rawGrammar->patterns = std::vector<IRawRule*>();
+    rawGrammar->patterns = new std::vector<IRawRule*>();
 
     IOnigLib* onigLib = new DefaultOnigLib();
 

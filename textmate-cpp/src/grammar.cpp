@@ -1,6 +1,7 @@
 #include "grammar.h"
 #include "tokenizeString.h"
 #include "encodedTokenAttributes.h"
+#include "matcher.h"
 #include <algorithm>
 #include <iostream>
 
@@ -33,7 +34,8 @@ bool BalancedBracketSelectors::matchesNever() const {
 }
 
 bool BalancedBracketSelectors::match(const std::vector<std::string>& scopes) const {
-    // Simplified matching logic
+    // Simple implementation: returns true if balanced brackets are enabled globally.
+    // Full implementation would match against specific scope selectors in _balancedBracketMatchers.
     return _allowAny;
 }
 
@@ -450,7 +452,8 @@ Grammar::Grammar(
     // Build token type matchers
     if (tokenTypes) {
         for (const auto& pair : *tokenTypes) {
-            // Simplified: would use createMatchers in full implementation
+            // Simple implementation: creates basic matchers without selector parsing.
+            // Full implementation would use createMatchers to parse scope selectors.
             TokenTypeMatcher matcher;
             matcher.type = pair.second;
             _tokenTypeMatchers.push_back(matcher);
@@ -541,18 +544,26 @@ void Grammar::setRule(RuleId ruleId, Rule* rule) {
 }
 
 IRawGrammar* Grammar::getExternalGrammar(const std::string& scopeName, IRawRepository* repository) {
+    std::cerr << "DEBUG: getExternalGrammar called for: " << scopeName << std::endl;
     auto it = _includedGrammars.find(scopeName);
     if (it != _includedGrammars.end()) {
+        std::cerr << "DEBUG:   found in cache" << std::endl;
         return it->second;
     }
 
     if (_grammarRepository) {
+        std::cerr << "DEBUG:   looking up in grammar repository" << std::endl;
         IRawGrammar* rawIncludedGrammar = _grammarRepository->lookup(scopeName);
         if (rawIncludedGrammar) {
+            std::cerr << "DEBUG:   found! Initializing..." << std::endl;
             IRawRule* base = (repository && repository->baseRule) ? repository->baseRule : nullptr;
             _includedGrammars[scopeName] = initGrammar(rawIncludedGrammar, base);
             return _includedGrammars[scopeName];
+        } else {
+            std::cerr << "DEBUG:   not found in repository" << std::endl;
         }
+    } else {
+        std::cerr << "DEBUG:   no grammar repository" << std::endl;
     }
 
     return nullptr;
@@ -565,10 +576,113 @@ std::vector<Injection> Grammar::getInjections() {
     return *_injections;
 }
 
+// Helper function: Check if two scope names match (exact or prefix match)
+static bool scopesAreMatching(const std::string& thisScopeName, const std::string& scopeName) {
+    if (thisScopeName.empty()) {
+        return false;
+    }
+    if (thisScopeName == scopeName) {
+        return true;
+    }
+    size_t len = scopeName.length();
+    return thisScopeName.length() > len &&
+           thisScopeName.substr(0, len) == scopeName &&
+           thisScopeName[len] == '.';
+}
+
+// Helper function: Match identifiers against scopes
+static bool nameMatcher(const std::vector<std::string>& identifiers,
+                       const std::vector<std::string>& scopes) {
+    if (scopes.size() < identifiers.size()) {
+        return false;
+    }
+    size_t lastIndex = 0;
+    for (const auto& identifier : identifiers) {
+        bool found = false;
+        for (size_t i = lastIndex; i < scopes.size(); i++) {
+            if (scopesAreMatching(scopes[i], identifier)) {
+                lastIndex = i + 1;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper function: Collect injections from a single injection rule
+static void collectInjections(std::vector<Injection>& result,
+                              const std::string& selector,
+                              IRawRule* rule,
+                              Grammar* grammar,
+                              IRawGrammar* grammarDef) {
+    if (!rule) {
+        return;
+    }
+
+    // Create matchers from the selector
+    auto matchers = createMatchers<std::vector<std::string>>(selector, nameMatcher);
+
+    // Get the compiled rule ID
+    RuleId ruleId = RuleFactory::getCompiledRuleId(rule, grammar, grammarDef->repository);
+
+    // Add an injection for each matcher
+    for (const auto& matcherWithPriority : matchers) {
+        Injection injection;
+        injection.debugSelector = selector;
+        injection.matcher = matcherWithPriority.matcher;
+        injection.ruleId = ruleId;
+        injection.grammar = grammarDef;
+        injection.priority = matcherWithPriority.priority;
+        result.push_back(injection);
+    }
+}
+
 std::vector<Injection> Grammar::_collectInjections() {
     std::vector<Injection> result;
-    // Simplified injection collection
-    // Full implementation would parse injection selectors and create matchers
+
+    // Get the current grammar
+    IRawGrammar* grammar = _grammar;
+    if (!grammar) {
+        return result;
+    }
+
+    // Add injections from the current grammar
+    if (grammar->injections) {
+        for (const auto& pair : *grammar->injections) {
+            const std::string& expression = pair.first;
+            IRawRule* rule = pair.second;
+            collectInjections(result, expression, rule, this, grammar);
+        }
+    }
+
+    // Add injection grammars contributed for the current scope
+    if (_grammarRepository) {
+        std::vector<std::string> injectionScopeNames = _grammarRepository->injections(_rootScopeName);
+        for (const auto& injectionScopeName : injectionScopeNames) {
+            IRawGrammar* injectionGrammar = getExternalGrammar(injectionScopeName, nullptr);
+            if (injectionGrammar) {
+                const std::string* selector = injectionGrammar->injectionSelector;
+                if (selector && !selector->empty()) {
+                    // Use the injection grammar's $self rule which contains the patterns
+                    // After initGrammar, the patterns are moved to repository->selfRule
+                    IRawRule* injectionRule = (injectionGrammar->repository && injectionGrammar->repository->selfRule)
+                        ? injectionGrammar->repository->selfRule
+                        : injectionGrammar;
+                    collectInjections(result, *selector, injectionRule, this, injectionGrammar);
+                }
+            }
+        }
+    }
+
+    // Sort by priority
+    std::sort(result.begin(), result.end(), [](const Injection& a, const Injection& b) {
+        return a.priority < b.priority;
+    });
+
     return result;
 }
 
@@ -739,11 +853,11 @@ IRawGrammar* initGrammar(IRawGrammar* grammar, IRawRule* base) {
     IRawRule* selfRule = new IRawRule();
     // Transfer ownership of patterns from grammar to $self rule
     // This avoids double-free when both grammar and selfRule are destroyed
-    if (!grammar->patterns.empty()) {
-        selfRule->patterns = new std::vector<IRawRule*>(grammar->patterns);
+    if (grammar->patterns && !grammar->patterns->empty()) {
+        selfRule->patterns = new std::vector<IRawRule*>(*grammar->patterns);
         // Clear grammar->patterns so we don't have shared ownership
         // The IRawRule* objects are now owned only by selfRule->patterns
-        grammar->patterns.clear();
+        grammar->patterns->clear();
     }
     // Set name to grammar's scopeName
     selfRule->name = new std::string(grammar->scopeName);

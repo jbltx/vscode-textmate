@@ -11,6 +11,13 @@ bool isIdentifier(const std::string& token) {
     return std::regex_match(token, identifierPattern);
 }
 
+bool isIdentifier(const std::string* token) {
+    if (!token || token->empty()) {
+        return false;
+    }
+    return isIdentifier(*token);
+}
+
 SelectorTokenizer::SelectorTokenizer(const std::string& input)
     : _input(input), _position(0) {
 }

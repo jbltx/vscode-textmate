@@ -101,21 +101,20 @@ struct IRawRepository : public IRawRepositoryMap, public ILocatable {
 };
 
 // IRawGrammar interface
-struct IRawGrammar : public ILocatable {
-    IRawRepository* repository;
+struct IRawGrammar : public IRawRule {
     ScopeName scopeName;
-    std::vector<IRawRule*> patterns;
 
     std::map<std::string, IRawRule*>* injections;
     std::string* injectionSelector;
 
     std::vector<std::string>* fileTypes;
-    std::string* name;
+    // name and repository are inherited from IRawRule
     std::string* firstLineMatch;
 
     IRawGrammar()
-        : repository(nullptr), injections(nullptr), injectionSelector(nullptr),
-          fileTypes(nullptr), name(nullptr), firstLineMatch(nullptr) {}
+        : IRawRule(), injections(nullptr), injectionSelector(nullptr),
+          fileTypes(nullptr), firstLineMatch(nullptr) {
+    }
 
     ~IRawGrammar();
 };

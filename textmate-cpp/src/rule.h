@@ -67,10 +67,10 @@ private:
     std::vector<RegexSource*> _items;
     bool _hasAnchors;
     CompiledRule* _cached;
-    std::vector<std::string> _anchorCache_A0_G0;
-    std::vector<std::string> _anchorCache_A0_G1;
-    std::vector<std::string> _anchorCache_A1_G0;
-    std::vector<std::string> _anchorCache_A1_G1;
+    CompiledRule* _anchorCache_A0_G0;
+    CompiledRule* _anchorCache_A0_G1;
+    CompiledRule* _anchorCache_A1_G0;
+    CompiledRule* _anchorCache_A1_G1;
 
 public:
     RegExpSourceList();

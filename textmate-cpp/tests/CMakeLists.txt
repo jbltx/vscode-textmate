@@ -122,3 +122,63 @@ add_test(NAME Phase4MemoryTests COMMAND test_phase4_memory)
 set_target_properties(test_phase4_memory PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+# Debug test for TEST #35
+add_executable(test_debug_35
+    test_debug_35.cpp
+)
+
+# Link against the library
+target_link_libraries(test_debug_35
+    vscode-textmate-cpp
+)
+
+# Include RapidJSON for parsing
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_debug_35 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+# Set output directory
+set_target_properties(test_debug_35 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Debug test for TEST #42
+add_executable(test_debug_42
+    test_debug_42.cpp
+)
+
+# Link against the library
+target_link_libraries(test_debug_42
+    vscode-textmate-cpp
+)
+
+# Include RapidJSON for parsing
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_debug_42 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+# Set output directory
+set_target_properties(test_debug_42 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Debug test for TEST #47 (Injection test)
+add_executable(test_debug_47
+    test_debug_47.cpp
+)
+
+# Link against the library
+target_link_libraries(test_debug_47
+    vscode-textmate-cpp
+)
+
+# Include RapidJSON for parsing
+if(EXISTS ${RAPIDJSON_INCLUDE_DIR})
+    target_include_directories(test_debug_47 PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+# Set output directory
+set_target_properties(test_debug_47 PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
