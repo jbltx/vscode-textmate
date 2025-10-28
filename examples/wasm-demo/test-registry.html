@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WASM Registry Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .error { color: #f48771; }
+        .success { color: #4ec9b0; }
+    </style>
+</head>
+<body>
+    <h1>WASM Registry Test</h1>
+    <div id="output"></div>
+
+    <script src="dist/textmate-standard.js"></script>
+    <script>
+        async function test() {
+            const out = document.getElementById('output');
+
+            try {
+                out.innerHTML += '<p>1. Loading WASM module...</p>';
+                const Module = await createTextMateModule();
+                out.innerHTML += '<p class="success">✓ Module loaded</p>';
+
+                out.innerHTML += '<p>2. Checking Module properties...</p>';
+                out.innerHTML += '<p>Module keys: ' + Object.keys(Module).join(', ') + '</p>';
+
+                out.innerHTML += '<p>3. Creating Registry...</p>';
+                if (!Module.Registry) {
+                    throw new Error('Registry not found in Module. Available: ' + Object.keys(Module).join(', '));
+                }
+                const registry = new Module.Registry();
+                out.innerHTML += '<p class="success">✓ Registry created: ' + registry + '</p>';
+
+                out.innerHTML += '<p>4. Loading grammar...</p>';
+                const grammarJson = JSON.stringify({
+                    scopeName: "source.test",
+                    patterns: [
+                        { name: "comment", match: "//.*$" },
+                        { name: "keyword", match: "\\b(if|else)\\b" }
+                    ]
+                });
+
+                const handle = registry.loadGrammarFromContent(grammarJson, 'source.test');
+                out.innerHTML += '<p class="success">✓ Grammar loaded, handle: ' + handle + '</p>';
+
+                if (!handle || handle === 0) {
+                    throw new Error('Failed to load grammar');
+                }
+
+                out.innerHTML += '<p>5. Creating Grammar object...</p>';
+                const grammar = new Module.Grammar(handle);
+                out.innerHTML += '<p class="success">✓ Grammar created: ' + grammar.getScopeName() + '</p>';
+
+                out.innerHTML += '<p class="success">✅ All tests passed!</p>';
+            } catch (err) {
+                out.innerHTML += '<p class="error">❌ Error: ' + err.message + '</p>';
+                console.error(err);
+            }
+        }
+
+        test();
+    </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSCode TextMate WASM 2023 Demo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 VSCode TextMate WASM 2023</h1>
+            <p>Interactive syntax highlighting powered by WebAssembly with WASM 2023 features</p>
+        </header>
+
+        <section class="status-banner">
+            <div id="status" class="status loading">
+                <span class="spinner"></span>
+                Loading WASM module...
+            </div>
+            <div id="features" class="features-list" style="display:none;">
+                <span class="feature-badge" id="simd">SIMD128</span>
+                <span class="feature-badge" id="exceptions">WASM Exceptions</span>
+                <span class="feature-badge" id="bulk-memory">Bulk Memory</span>
+                <span class="feature-badge" id="bigint">BigInt</span>
+            </div>
+        </section>
+
+        <div class="main-grid">
+            <!-- Language Selection -->
+            <section class="panel">
+                <h2>📝 Select Language</h2>
+                <select id="languageSelect" onchange="loadSelectedGrammar()" disabled>
+                    <option value="">-- Loading languages... --</option>
+                </select>
+                <button id="loadGrammarBtn" onclick="loadSelectedGrammar()" disabled>
+                    Load Grammar
+                </button>
+            </section>
+
+            <!-- Theme Selection -->
+            <section class="panel">
+                <h2>🎨 Select Theme</h2>
+                <select id="themeSelect" onchange="onThemeSelected()" disabled>
+                    <option value="">-- Loading themes... --</option>
+                </select>
+            </section>
+
+            <!-- Code Editor -->
+            <section class="panel">
+                <h2>💻 Source Code</h2>
+                <textarea id="sourceCode" placeholder="Enter code to tokenize..." disabled>// Hello, WASM 2023!
+const greeting = "WebAssembly syntax highlighting";
+console.log(greeting);
+
+function factorial(n) {
+    if (n <= 1) return 1;
+    return n * factorial(n - 1);
+}
+
+// SIMD acceleration in action
+const data = [1, 2, 3, 4, 5];
+</textarea>
+                <div class="controls">
+                    <button id="tokenizeBtn" onclick="tokenize()" disabled>
+                        ⚡ Tokenize
+                    </button>
+                    <span id="tokenizeTime" class="timing"></span>
+                </div>
+            </section>
+
+            <!-- Token Output -->
+            <section class="panel full-width">
+                <h2>🎯 Token Output</h2>
+                <div class="output" id="output">
+                    <em>Load a grammar and tokenize code to see syntax highlighting...</em>
+                </div>
+            </section>
+
+            <!-- Performance Stats -->
+            <section class="panel">
+                <h2>📊 Performance</h2>
+                <div id="stats" class="stats-box">
+                    <div class="stat-item">
+                        <span class="label">Lines:</span>
+                        <span id="lineCount" class="value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Tokens:</span>
+                        <span id="tokenCount" class="value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Time:</span>
+                        <span id="totalTime" class="value">0ms</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="label">Throughput:</span>
+                        <span id="throughput" class="value">0 tokens/ms</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- JSON Output -->
+            <section class="panel">
+                <h2>📋 JSON Output</h2>
+                <div class="output json-output" id="jsonOutput">
+                    <em>Tokenization results will appear as JSON here...</em>
+                </div>
+                <button onclick="copyJsonToClipboard()" id="copyBtn" disabled>
+                    📋 Copy JSON
+                </button>
+            </section>
+        </div>
+
+        <footer>
+            <p>
+                Built with <strong>Emscripten 4.0+</strong> •
+                WASM 2023 Features •
+                <a href="https://github.com/microsoft/vscode-textmate">GitHub</a>
+            </p>
+        </footer>
+    </div>
+
+    <!-- WASM Module -->
+    <script src="dist/textmate-standard.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
