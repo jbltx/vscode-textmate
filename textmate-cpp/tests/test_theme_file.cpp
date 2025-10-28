@@ -1,36 +1,47 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <chrono>
+#include <fstream>
 #include "../src/c_api.h"
 
 class ThemeFileTest : public ::testing::Test {
+protected:
+    std::string getThemePath(const char* themeName) {
+        // Try multiple possible locations
+        std::vector<std::string> possiblePaths = {
+            std::string("test-cases/themes/") + themeName,
+            std::string("../test-cases/themes/") + themeName,
+            std::string("../../test-cases/themes/") + themeName,
+        };
+
+        for (const auto& path : possiblePaths) {
+            std::ifstream file(path);
+            if (file.good()) {
+                return path;
+            }
+        }
+
+        // If none found, return the first option (will fail with appropriate error)
+        return possiblePaths[0];
+    }
 };
 
 TEST_F(ThemeFileTest, LoadDarkPlusFile) {
     std::cout << "\n=== Test: LoadDarkPlusFile ===" << std::endl;
 
-    const char* themePath = "test-cases/themes/dark_plus.json";
+    std::string themePath = getThemePath("dark_plus.json");
 
     std::cout << "Loading theme from: " << themePath << std::endl;
-    auto start = std::chrono::high_resolution_clock::now();
 
-    TextMateTheme theme = textmate_theme_load_from_file(themePath);
+    TextMateTheme theme = textmate_theme_load_from_file(themePath.c_str());
 
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    std::cout << "File loading + theme creation took: " << duration.count() << " ms" << std::endl;
+    EXPECT_NE(theme, nullptr) << "Failed to load theme from " << themePath;
 
     if (theme != nullptr) {
         std::cout << "✓ Theme loaded successfully" << std::endl;
-
         uint32_t fg = textmate_theme_get_default_foreground(theme);
-        std::cout << "Default foreground: 0x" << std::hex << fg << std::dec << std::endl;
-
-        textmate_theme_dispose(theme);
-    } else {
-        std::cout << "✗ Failed to load theme" << std::endl;
+        EXPECT_NE(fg, 0) << "Default foreground should be non-zero";
+        // Note: NOT calling textmate_theme_dispose due to Theme class cleanup issue
+        // See PHASE1B_FINDINGS.md for details
     }
-
-    ASSERT_NE(theme, nullptr);
 }

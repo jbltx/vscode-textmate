@@ -38,6 +38,8 @@ set(TEXTMATE_SOURCES
     src/grammar.cpp
     src/registry.cpp
     src/c_api.cpp
+    src/session.cpp
+    src/syntax_highlighter.cpp
 )
 
 # Header files (for IDE support)
@@ -59,6 +61,10 @@ set(TEXTMATE_HEADERS
     src/registry.h
     src/main.h
     src/c_api.h
+    src/session.h
+    src/session_c_api.h
+    src/syntax_highlighter.h
+    src/syntax_highlighter_c_api.h
 )
 
 # Find Oniguruma library

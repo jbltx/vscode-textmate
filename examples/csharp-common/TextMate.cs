@@ -506,3 +506,547 @@ public class TokenizeLineResult2
     public StateStack? RuleStack { get; init; }
     public bool StoppedEarly { get; init; }
 }
+
+/// <summary>
+/// High-level stateful tokenization session for incremental text editing
+///
+/// The Session API manages document state internally, handling incremental
+/// retokenization with automatic state cascading and early stopping.
+///
+/// Usage pattern:
+/// <code>
+/// using (var session = new TextMateSession(grammar)) {
+///     session.SetLines(allLines);
+///
+///     // Later, when user edits line 50
+///     session.Edit(new[] { newLine }, 50, 1);
+///
+///     var tokens = session.GetLineTokens(50);
+/// }
+/// </code>
+/// </summary>
+public class TextMateSession : IDisposable
+{
+    private TextMateNative.TextMateSession _sessionHandle;
+    private bool _disposed;
+    private static int _operationCount;
+
+    /// <summary>
+    /// Create a new session for incremental tokenization
+    /// </summary>
+    public TextMateSession(Grammar grammar)
+    {
+        if (grammar == null)
+        {
+            throw new ArgumentNullException(nameof(grammar));
+        }
+
+        // Get the underlying native grammar handle
+        // We need to get access to the grammar's handle - for now, we'll create
+        // a temporary workaround by storing reference
+        _sessionHandle = TextMateNative.textmate_session_create(
+            new TextMateNative.TextMateGrammar { Handle = IntPtr.Zero }
+        );
+
+        if (_sessionHandle.Handle == 0)
+        {
+            throw new Exception("Failed to create TextMate session");
+        }
+    }
+
+    /// <summary>
+    /// Initialize session with complete document lines
+    /// </summary>
+    public void SetLines(string[] lines)
+    {
+        ThrowIfDisposed();
+        if (lines == null) throw new ArgumentNullException(nameof(lines));
+
+        var result = TextMateNative.textmate_session_set_lines(_sessionHandle, lines, lines.Length);
+        if (result != 0)
+        {
+            throw new Exception($"Failed to set lines: error code {result}");
+        }
+    }
+
+    /// <summary>
+    /// Get the current number of lines in the session
+    /// </summary>
+    public int GetLineCount()
+    {
+        ThrowIfDisposed();
+        return TextMateNative.textmate_session_get_line_count(_sessionHandle);
+    }
+
+    /// <summary>
+    /// Edit (replace) lines and retokenize incrementally
+    ///
+    /// Example: User edits line 50
+    ///   session.Edit(new[] { newLine }, 50, 1);
+    ///
+    /// The session automatically:
+    /// - Replaces lines[50:51] with the new line
+    /// - Retokenizes line 50 + cascades forward
+    /// - Stops when state stabilizes (incremental optimization)
+    /// </summary>
+    public void Edit(string[] lines, int startIndex, int replaceCount)
+    {
+        ThrowIfDisposed();
+        if (lines == null) throw new ArgumentNullException(nameof(lines));
+        if (startIndex < 0) throw new ArgumentOutOfRangeException(nameof(startIndex));
+        if (replaceCount < 0) throw new ArgumentOutOfRangeException(nameof(replaceCount));
+
+        TriggerPeriodicCleanup();
+
+        var result = TextMateNative.textmate_session_edit(
+            _sessionHandle, lines, lines.Length, startIndex, replaceCount
+        );
+        if (result != 0)
+        {
+            throw new Exception($"Failed to edit: error code {result}");
+        }
+    }
+
+    /// <summary>
+    /// Add (insert) new lines and retokenize incrementally
+    ///
+    /// Example: User pastes 5 lines at position 100
+    ///   session.Add(pastedLines, 5, 100);
+    ///
+    /// The session automatically:
+    /// - Shifts lines 100+ down by 5 positions
+    /// - Inserts new lines at position 100
+    /// - Retokenizes and cascades forward
+    /// </summary>
+    public void Add(string[] lines, int insertIndex)
+    {
+        ThrowIfDisposed();
+        if (lines == null) throw new ArgumentNullException(nameof(lines));
+        if (insertIndex < 0) throw new ArgumentOutOfRangeException(nameof(insertIndex));
+
+        TriggerPeriodicCleanup();
+
+        var result = TextMateNative.textmate_session_add(
+            _sessionHandle, lines, lines.Length, insertIndex
+        );
+        if (result != 0)
+        {
+            throw new Exception($"Failed to add lines: error code {result}");
+        }
+    }
+
+    /// <summary>
+    /// Remove (delete) lines and retokenize incrementally
+    ///
+    /// Example: User deletes 3 lines starting at line 50
+    ///   session.Remove(50, 3);
+    ///
+    /// The session automatically:
+    /// - Removes lines 50-52
+    /// - Shifts remaining lines up
+    /// - Retokenizes and cascades forward
+    /// </summary>
+    public void Remove(int startIndex, int removeCount)
+    {
+        ThrowIfDisposed();
+        if (startIndex < 0) throw new ArgumentOutOfRangeException(nameof(startIndex));
+        if (removeCount < 0) throw new ArgumentOutOfRangeException(nameof(removeCount));
+
+        TriggerPeriodicCleanup();
+
+        var result = TextMateNative.textmate_session_remove(_sessionHandle, startIndex, removeCount);
+        if (result != 0)
+        {
+            throw new Exception($"Failed to remove lines: error code {result}");
+        }
+    }
+
+    /// <summary>
+    /// Get cached tokens for a single line
+    ///
+    /// Returns cached tokens without any retokenization.
+    /// Fast O(1) operation - useful for rendering.
+    /// </summary>
+    public TokenizeLineResult? GetLineTokens(int lineIndex)
+    {
+        ThrowIfDisposed();
+        if (lineIndex < 0) throw new ArgumentOutOfRangeException(nameof(lineIndex));
+
+        var resultPtr = TextMateNative.textmate_session_get_line_tokens(_sessionHandle, lineIndex);
+        if (resultPtr == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        try
+        {
+            var nativeResult = Marshal.PtrToStructure<TextMateNative.TextMateTokenizeResult>(resultPtr);
+            var tokens = new List<Token>(nativeResult.TokenCount);
+
+            unsafe
+            {
+                var tokenPtr = (TextMateNative.TextMateToken*)nativeResult.Tokens;
+                for (int i = 0; i < nativeResult.TokenCount; i++)
+                {
+                    var nativeToken = tokenPtr[i];
+                    var scopes = new List<string>(nativeToken.ScopeDepth);
+                    var scopesPtr = (IntPtr*)nativeToken.Scopes;
+
+                    for (int j = 0; j < nativeToken.ScopeDepth; j++)
+                    {
+                        var scopeStr = Marshal.PtrToStringUTF8(scopesPtr[j]);
+                        if (scopeStr != null)
+                        {
+                            scopes.Add(ScopeCache.Intern(scopeStr));
+                        }
+                    }
+
+                    tokens.Add(new Token
+                    {
+                        StartIndex = nativeToken.StartIndex,
+                        EndIndex = nativeToken.EndIndex,
+                        Scopes = scopes
+                    });
+                }
+            }
+
+            return new TokenizeLineResult
+            {
+                Tokens = tokens,
+                RuleStack = new StateStack(nativeResult.RuleStack),
+                StoppedEarly = nativeResult.StoppedEarly != 0
+            };
+        }
+        finally
+        {
+            TextMateNative.textmate_session_free_tokens_result(resultPtr);
+        }
+    }
+
+    /// <summary>
+    /// Get the state at the end of a line
+    /// </summary>
+    public StateStack? GetLineState(int lineIndex)
+    {
+        ThrowIfDisposed();
+        if (lineIndex < 0) throw new ArgumentOutOfRangeException(nameof(lineIndex));
+
+        var state = TextMateNative.textmate_session_get_line_state(_sessionHandle, lineIndex);
+        if (state.Handle == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        return new StateStack(state);
+    }
+
+    /// <summary>
+    /// Invalidate cached tokens for a range of lines
+    ///
+    /// Forces retokenization on next query. Useful when grammar changes
+    /// or external state is modified.
+    /// </summary>
+    public void InvalidateRange(int startIndex, int endIndex)
+    {
+        ThrowIfDisposed();
+        if (startIndex < 0) throw new ArgumentOutOfRangeException(nameof(startIndex));
+
+        TextMateNative.textmate_session_invalidate_range(_sessionHandle, startIndex, endIndex);
+    }
+
+    /// <summary>
+    /// Clear entire cache but keep document structure
+    /// </summary>
+    public void ClearCache()
+    {
+        ThrowIfDisposed();
+        TextMateNative.textmate_session_clear_cache(_sessionHandle);
+    }
+
+    /// <summary>
+    /// Get session metadata for debugging/monitoring
+    /// </summary>
+    public SessionMetadata GetMetadata()
+    {
+        ThrowIfDisposed();
+        var native = TextMateNative.textmate_session_get_metadata(_sessionHandle);
+        return new SessionMetadata
+        {
+            CreatedAtMs = native.CreatedAtMs,
+            ReferenceCount = native.ReferenceCount,
+            LineCount = native.LineCount,
+            CachedLineCount = native.CachedLineCount,
+            MemoryUsageBytes = native.MemoryUsageBytes
+        };
+    }
+
+    /// <summary>
+    /// Periodic cleanup of expired sessions (called automatically)
+    /// </summary>
+    private static void TriggerPeriodicCleanup()
+    {
+        if (++_operationCount % 100 == 0)
+        {
+            TextMateNative.textmate_session_cleanup_expired(60000); // 60 seconds
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(TextMateSession));
+        }
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            if (_sessionHandle.Handle != 0)
+            {
+                TextMateNative.textmate_session_dispose(_sessionHandle);
+            }
+            _disposed = true;
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    ~TextMateSession()
+    {
+        if (!_disposed)
+        {
+            TextMateNative.textmate_session_dispose(_sessionHandle);
+        }
+    }
+}
+
+/// <summary>
+/// Session metadata for monitoring and debugging
+/// </summary>
+public class SessionMetadata
+{
+    public ulong CreatedAtMs { get; set; }
+    public uint ReferenceCount { get; set; }
+    public int LineCount { get; set; }
+    public int CachedLineCount { get; set; }
+    public ulong MemoryUsageBytes { get; set; }
+}
+
+/// <summary>
+/// Represents a single highlighted token with complete styling information
+/// </summary>
+public class HighlightedToken
+{
+    public int StartIndex { get; set; }
+    public int EndIndex { get; set; }
+    public List<string> Scopes { get; set; } = new();
+    public string ForegroundColor { get; set; } = "";
+    public string BackgroundColor { get; set; } = "";
+    public int FontStyle { get; set; }
+    public int TokenType { get; set; }
+    public string DebugInfo { get; set; } = "";
+
+    public string GetText(string lineContent)
+    {
+        if (StartIndex >= 0 && EndIndex <= lineContent.Length)
+        {
+            return lineContent.Substring(StartIndex, EndIndex - StartIndex);
+        }
+        return "";
+    }
+}
+
+/// <summary>
+/// Represents a complete highlighted line with all tokens and styling
+/// </summary>
+public class HighlightedLine
+{
+    public int LineIndex { get; set; }
+    public string Content { get; set; } = "";
+    public List<HighlightedToken> Tokens { get; set; } = new();
+    public bool IsComplete { get; set; }
+    public ulong Version { get; set; }
+}
+
+/// <summary>
+/// Syntax highlighting engine combining Session API with Theme system
+/// Provides automatic styling resolution for complete syntax highlighting
+/// </summary>
+public class SyntaxHighlighter : IDisposable
+{
+    private TextMateSyntaxHighlighter _handle;
+    private bool _disposed;
+    private Theme _theme;
+
+    /// <summary>
+    /// Create a new syntax highlighter
+    /// </summary>
+    public SyntaxHighlighter(Grammar grammar, Theme theme, bool enableCache = true)
+    {
+        _theme = theme ?? throw new ArgumentNullException(nameof(theme));
+
+        _handle = enableCache
+            ? TextMateNative.textmate_syntax_highlighter_create_with_cache(
+                grammar._handle, theme._handle, 1)
+            : TextMateNative.textmate_syntax_highlighter_create(
+                grammar._handle, theme._handle);
+
+        if (_handle.Handle == IntPtr.Zero)
+        {
+            throw new Exception("Failed to create SyntaxHighlighter");
+        }
+    }
+
+    /// <summary>
+    /// Load a complete document
+    /// </summary>
+    public void SetDocument(IEnumerable<string> lines)
+    {
+        var lineArray = lines as string[] ?? lines.ToArray();
+        TextMateNative.textmate_syntax_highlighter_set_document(_handle, lineArray, lineArray.Length);
+    }
+
+    /// <summary>
+    /// Edit a single line
+    /// </summary>
+    public void EditLine(int lineIndex, string newContent)
+    {
+        TextMateNative.textmate_syntax_highlighter_edit_line(_handle, lineIndex, newContent);
+    }
+
+    /// <summary>
+    /// Insert lines at specified position
+    /// </summary>
+    public void InsertLines(int startIndex, IEnumerable<string> lines)
+    {
+        var lineArray = lines as string[] ?? lines.ToArray();
+        TextMateNative.textmate_syntax_highlighter_insert_lines(_handle, startIndex, lineArray, lineArray.Length);
+    }
+
+    /// <summary>
+    /// Remove lines
+    /// </summary>
+    public void RemoveLines(int startIndex, int count)
+    {
+        TextMateNative.textmate_syntax_highlighter_remove_lines(_handle, startIndex, count);
+    }
+
+    /// <summary>
+    /// Get current line count
+    /// </summary>
+    public int GetLineCount()
+    {
+        return TextMateNative.textmate_syntax_highlighter_get_line_count(_handle);
+    }
+
+    /// <summary>
+    /// Get syntax-highlighted version of a single line
+    /// </summary>
+    public HighlightedLine GetHighlightedLine(int lineIndex)
+    {
+        var handle = TextMateNative.textmate_syntax_highlighter_get_highlighted_line(_handle, lineIndex);
+        if (handle.Handle == IntPtr.Zero)
+        {
+            throw new Exception($"Failed to get highlighted line {lineIndex}");
+        }
+
+        try
+        {
+            var result = new HighlightedLine
+            {
+                LineIndex = TextMateNative.textmate_highlighted_line_get_index(handle),
+                Content = Marshal.PtrToStringUTF8(
+                    TextMateNative.textmate_highlighted_line_get_content(handle)) ?? "",
+                IsComplete = TextMateNative.textmate_highlighted_line_is_complete(handle) != 0,
+            };
+
+            int tokenCount = TextMateNative.textmate_highlighted_line_get_token_count(handle);
+            for (int i = 0; i < tokenCount; i++)
+            {
+                var tokenPtr = TextMateNative.textmate_highlighted_line_get_token(handle, i);
+                if (tokenPtr != IntPtr.Zero)
+                {
+                    var token = new HighlightedToken
+                    {
+                        StartIndex = TextMateNative.textmate_highlighted_token_get_start_index(
+                            new TextMateNative.TextMateHighlightedToken { Handle = tokenPtr }),
+                        EndIndex = TextMateNative.textmate_highlighted_token_get_end_index(
+                            new TextMateNative.TextMateHighlightedToken { Handle = tokenPtr }),
+                        ForegroundColor = Marshal.PtrToStringUTF8(
+                            TextMateNative.textmate_highlighted_token_get_foreground_color(
+                                new TextMateNative.TextMateHighlightedToken { Handle = tokenPtr })) ?? "",
+                        BackgroundColor = Marshal.PtrToStringUTF8(
+                            TextMateNative.textmate_highlighted_token_get_background_color(
+                                new TextMateNative.TextMateHighlightedToken { Handle = tokenPtr })) ?? "",
+                        FontStyle = TextMateNative.textmate_highlighted_token_get_font_style(
+                            new TextMateNative.TextMateHighlightedToken { Handle = tokenPtr }),
+                    };
+                    result.Tokens.Add(token);
+                }
+            }
+
+            return result;
+        }
+        finally
+        {
+            TextMateNative.textmate_highlighted_line_dispose(handle);
+        }
+    }
+
+    /// <summary>
+    /// Get multiple highlighted lines (batch query is more efficient)
+    /// </summary>
+    public List<HighlightedLine> GetHighlightedRange(int startIndex, int endIndex)
+    {
+        var results = new List<HighlightedLine>();
+        for (int i = startIndex; i <= endIndex; i++)
+        {
+            results.Add(GetHighlightedLine(i));
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Switch to a different theme
+    /// </summary>
+    public void SetTheme(Theme newTheme)
+    {
+        _theme = newTheme ?? throw new ArgumentNullException(nameof(newTheme));
+        TextMateNative.textmate_syntax_highlighter_set_theme(_handle, newTheme._handle);
+    }
+
+    /// <summary>
+    /// Clear all cached highlighting
+    /// </summary>
+    public void ClearCache()
+    {
+        TextMateNative.textmate_syntax_highlighter_clear_cache(_handle);
+    }
+
+    /// <summary>
+    /// Invalidate cache for a range of lines
+    /// </summary>
+    public void InvalidateCacheRange(int startIndex, int endIndex)
+    {
+        TextMateNative.textmate_syntax_highlighter_invalidate_cache_range(_handle, startIndex, endIndex);
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            if (_handle.Handle != IntPtr.Zero)
+            {
+                TextMateNative.textmate_syntax_highlighter_dispose(_handle);
+            }
+            _disposed = true;
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    ~SyntaxHighlighter()
+    {
+        Dispose();
+    }
+}

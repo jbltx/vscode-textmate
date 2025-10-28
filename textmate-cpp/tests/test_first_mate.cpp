@@ -1,4 +1,5 @@
 #include "../src/main.h"
+#include <gtest/gtest.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -338,67 +339,84 @@ bool runTestCase(const Value& testCase, GrammarHolder& holder, IOnigLib* onigLib
     }
 }
 
-int main(int argc, char** argv) {
-    std::cout << "vscode-textmate C++ First-Mate Tests" << std::endl;
-    std::cout << "=====================================" << std::endl << std::endl;
-
-    try {
-        // Determine paths (relative to build directory where test is run from)
-        std::string testCasesPath = "../../test-cases/first-mate";
-        std::string testsJsonPath = testCasesPath + "/tests.json";
-
-        // Allow override via command line
-        if (argc > 1) {
-            testsJsonPath = argv[1];
-        }
-
-        std::cout << "Loading tests from: " << testsJsonPath << std::endl << std::endl;
-
-        // Parse tests.json
-        Document testsDoc = parseJSONFile(testsJsonPath);
-
-        if (!testsDoc.IsArray()) {
-            std::cerr << "ERROR: tests.json is not an array" << std::endl;
-            return 1;
-        }
-
-        std::cout << "Found " << testsDoc.Size() << " test cases" << std::endl << std::endl;
-
-        // Initialize Oniguruma
-        IOnigLib* onigLib = new DefaultOnigLib();
-
-        // Run all tests
-        int passed = 0;
-        int failed = 0;
-
-        for (SizeType i = 0; i < testsDoc.Size(); i++) {
-            std::cout << "Test #" << (i + 1) << ": ";
-
-            // Create fresh grammar holder for EACH test to ensure complete isolation
-            GrammarHolder holder(testCasesPath);
-
-            if (runTestCase(testsDoc[i], holder, onigLib, i + 1)) {
-                passed++;
-            } else {
-                failed++;
-            }
-
-            std::cout << std::endl;
-        }
-
-        // Summary
-        std::cout << "=====================================" << std::endl;
-        std::cout << "Tests passed: " << passed << "/" << testsDoc.Size() << std::endl;
-        std::cout << "Tests failed: " << failed << "/" << testsDoc.Size() << std::endl;
-        std::cout << "=====================================" << std::endl;
-
-        // Cleanup
-        delete onigLib;
-
-        return (failed == 0) ? 0 : 1;
-
-    } catch (const std::exception& e) {
-        std::cerr << "FATAL ERROR: " << e.what() << std::endl;
-        return 1;
+// Helper to get test cases path that works from both build and project root
+std::string getTestCasesPath() {
+    std::string path = "test-cases/first-mate";
+    std::ifstream testFile(path + "/tests.json");
+    if (!testFile.good()) {
+        path = "../../test-cases/first-mate";
     }
+    return path;
+}
+
+// Global test data
+static Document* g_testsDoc = nullptr;
+static IOnigLib* g_onigLib = nullptr;
+static std::string g_testCasesPath;
+
+// Initialize test data
+void initializeTestData() {
+    if (!g_testsDoc) {
+        try {
+            g_testCasesPath = getTestCasesPath();
+            std::string testsJsonPath = g_testCasesPath + "/tests.json";
+            g_testsDoc = new Document();
+            *g_testsDoc = parseJSONFile(testsJsonPath);
+            g_onigLib = new DefaultOnigLib();
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to initialize test data: " << e.what() << std::endl;
+        }
+    }
+}
+
+// GTest fixture for First-Mate tests
+class FirstMateTest : public ::testing::Test {
+protected:
+    static void SetUpTestSuite() {
+        initializeTestData();
+    }
+
+    static void TearDownTestSuite() {
+        if (g_onigLib) {
+            delete g_onigLib;
+            g_onigLib = nullptr;
+        }
+        if (g_testsDoc) {
+            delete g_testsDoc;
+            g_testsDoc = nullptr;
+        }
+    }
+};
+
+// Parameterized test class
+class FirstMateParameterizedTest : public FirstMateTest,
+                                   public ::testing::WithParamInterface<int> {
+};
+
+// Define parameterized tests
+TEST_P(FirstMateParameterizedTest, FirstMateTests) {
+    int testIndex = GetParam();
+    ASSERT_NE(g_testsDoc, nullptr) << "Test data not initialized";
+    ASSERT_LT(testIndex, static_cast<int>(g_testsDoc->Size()));
+
+    const Value& testCase = (*g_testsDoc)[testIndex];
+    GrammarHolder holder(g_testCasesPath);
+
+    bool result = runTestCase(testCase, holder, g_onigLib, testIndex + 1);
+    EXPECT_TRUE(result) << "Test case " << testIndex + 1 << " failed";
+}
+
+// Instantiate parameterized tests - will auto-detect from tests.json
+INSTANTIATE_TEST_CASE_P(
+    FirstMateTestSuite,
+    FirstMateParameterizedTest,
+    ::testing::Range(0, 65));  // Adjust if test count changes
+
+// Initialize test data at program start
+namespace {
+struct TestInitializer {
+    TestInitializer() {
+        initializeTestData();
+    }
+} test_initializer;
 }

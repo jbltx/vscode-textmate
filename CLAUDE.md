@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSCode TextMate is an interpreter for TextMate grammar files that use the oniguruma dialect for regular expressions. This library is used in VS Code to provide syntax highlighting and tokenization. It supports loading grammar files from JSON or PLIST format.
 
+## Git
+
+You can check diff against base branch, but you should never try to commit anything yourself.
+
 ## Build and Test Commands
 
 ### Development Workflow
@@ -136,14 +140,90 @@ To run the tests for the C++ port, execute the following command from the `build
 This will run the test suite using `test-cases/first-mate/tests.json` as the source for test inputs,
 and `test-cases/first-mate/fixtures/*.json` as the source for grammar fixtures.
 
-### Others tests
+### Other tests
 
-When required, additional tests can be written and run individually. For example, to run the balanced brackets tests:
+When required, additional tests can be written and run individually. For example:
 
+**Session API tests:**
 ```bash
-./tests/test_grammar
+./tests/test_session
+```
+
+**Theme tests:**
+```bash
+./tests/test_theme
+```
+
+**SyntaxHighlighter tests:**
+```bash
+./tests/test_syntax_highlighter
 ```
 
 When editing tests, ensure to update the CMakeLists.txt file located in the `tests` directory.
 
 NEVER USE `timeout` nor `gtimeout` CLI COMMANDS TO RUN TESTS, IT IS NOT SUPPORTED BY ALL PLATFORMS.
+
+## C++ Port Architecture
+
+### Core Components
+
+The C++ port includes several key systems:
+
+1. **Session API** (`session.h/cpp`, `session_c_api.h`)
+   - Provides stateful, incremental tokenization
+   - Automatic state management without manual state passing
+   - Perfect for text editors with frequent edits
+   - Reference counting for memory safety
+
+2. **Theme System** (`theme.h/cpp`, `theme_c_api.h`)
+   - Trie-based scope matching for efficient color lookup
+   - StyleAttributes for font styles and colors
+   - ColorMap for color pooling
+   - Supports theme inheritance
+
+3. **SyntaxHighlighter** (`syntax_highlighter.h/cpp`, `syntax_highlighter_c_api.h`) - NEW
+   - High-level API combining Session + Theme
+   - Automatic styling resolution
+   - Complete highlighting information (colors, fonts, token types)
+   - Built-in caching with version tracking
+   - Perfect for general-purpose syntax highlighting
+   - Full C API for language bindings
+
+### Design Philosophy
+
+- **Stateless API** (`tokenizeLine()`) - For performance-critical, custom rendering
+- **Session API** (`SessionImpl`) - For incremental edits with automatic state management
+- **SyntaxHighlighter** - For convenient, color-aware syntax highlighting
+
+## Documentation
+
+### TypeScript Implementation
+- See `src/` for TypeScript source
+- API reference in generated `out/` after building
+
+### C++ Implementation
+
+- **Session API**: `textmate-cpp/src/SESSION_API_README.md`
+- **Theme System**: `textmate-cpp/src/theme.h` (header comments)
+- **SyntaxHighlighter**: `textmate-cpp/src/SYNTAX_HIGHLIGHTER_README.md`
+- **Quick Start**: `textmate-cpp/examples/SYNTAX_HIGHLIGHTER_QUICKSTART.md`
+- **Implementation Summary**: `SYNTAX_HIGHLIGHTER_IMPLEMENTATION.md`
+
+### C# Bindings
+
+- **Implementation**: `examples/csharp-common/TextMate.cs`
+- **Documentation**: `examples/csharp-common/README.md`
+- **Quick Start**: `examples/SESSION_API_QUICKSTART.md`
+
+### Build & Test Notes
+
+All C++ tests build with no warnings:
+```bash
+cd textmate-cpp && mkdir -p build && cd build
+cmake .. && cmake --build .
+./tests/test_syntax_highlighter    # Verify SyntaxHighlighter
+./tests/test_session               # Verify Session API
+./tests/test_theme                 # Verify Theme system
+```
+
+For integration testing, compare C++ output against TypeScript version using test-cases.

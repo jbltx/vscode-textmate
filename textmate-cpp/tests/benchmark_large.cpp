@@ -59,6 +59,26 @@ std::vector<std::string> splitLines(const std::string& content) {
     return lines;
 }
 
+// Wrap long lines to simulate text wrap at specified column width
+std::vector<std::string> wrapLines(const std::vector<std::string>& lines, int wrapColumn) {
+    if (wrapColumn <= 0) {
+        return lines;  // No wrapping
+    }
+
+    std::vector<std::string> wrappedLines;
+    for (const auto& line : lines) {
+        if ((int)line.length() <= wrapColumn) {
+            wrappedLines.push_back(line);
+        } else {
+            // Split long line into multiple wrapped lines
+            for (size_t i = 0; i < line.length(); i += wrapColumn) {
+                wrappedLines.push_back(line.substr(i, wrapColumn));
+            }
+        }
+    }
+    return wrappedLines;
+}
+
 long long runBenchmark(Grammar* grammar, const std::vector<std::string>& lines, int& tokenCount) {
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -77,11 +97,44 @@ long long runBenchmark(Grammar* grammar, const std::vector<std::string>& lines, 
     return duration.count();
 }
 
-int main() {
+// Helper to resolve paths that work from both project root and build directory
+std::string resolvePath(const std::string& path) {
+    std::ifstream testFile(path);
+    if (testFile.good()) {
+        return path;
+    }
+    return "../../" + path;
+}
+
+int main(int argc, char** argv) {
     std::cout << "TextMate Large File Benchmark (C++)" << std::endl;
     std::cout << "====================================" << std::endl << std::endl;
 
-    std::string benchmarkPath = "../../benchmark";
+    // Parse command-line arguments
+    int wrapColumn = 0;  // 0 means no wrapping
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--wrap" && i + 1 < argc) {
+            wrapColumn = std::atoi(argv[++i]);
+        } else if (arg == "--help" || arg == "-h") {
+            std::cout << "Usage: benchmark_large [OPTIONS]" << std::endl;
+            std::cout << "Options:" << std::endl;
+            std::cout << "  --wrap <columns>   Enable text wrapping at specified column width (e.g., 100)" << std::endl;
+            std::cout << "  --help             Show this help message" << std::endl;
+            return 0;
+        }
+    }
+
+    if (wrapColumn > 0) {
+        std::cout << "Text wrap enabled: " << wrapColumn << " characters per line" << std::endl << std::endl;
+    }
+
+    // Determine benchmark path (try project root first, then build directory)
+    std::string benchmarkPath = "benchmark";
+    std::ifstream testFile(benchmarkPath + "/large.js.txt");
+    if (!testFile.good()) {
+        benchmarkPath = "../../benchmark";
+    }
 
     std::vector<BenchmarkCase> benchmarkCases = {
         {
@@ -93,19 +146,19 @@ int main() {
         {
             "vscode.d.ts",
             benchmarkPath + "/vscode.d.ts.txt",
-            "../../test-cases/themes/syntaxes/TypeScript.tmLanguage.json",
+            resolvePath("test-cases/themes/syntaxes/TypeScript.tmLanguage.json"),
             "source.ts"
         },
         {
             "Bootstrap CSS v3.1.1",
             benchmarkPath + "/bootstrap.css.txt",
-            "../../test-cases/first-mate/fixtures/css.json",
+            resolvePath("test-cases/first-mate/fixtures/css.json"),
             "source.css"
         },
         {
             "Bootstrap CSS minified",
             benchmarkPath + "/bootstrap.min.css.txt",
-            "../../test-cases/first-mate/fixtures/css.json",
+            resolvePath("test-cases/first-mate/fixtures/css.json"),
             "source.css"
         },
         {
@@ -117,7 +170,7 @@ int main() {
         {
             "Bootstrap multi-byte minified",
             benchmarkPath + "/main.08642f99.css.txt",
-            "../../test-cases/first-mate/fixtures/css.json",
+            resolvePath("test-cases/first-mate/fixtures/css.json"),
             "source.css"
         },
         {
@@ -145,6 +198,12 @@ int main() {
             // Read file
             std::string content = readFile(testCase.filePath);
             std::vector<std::string> lines = splitLines(content);
+
+            // Apply text wrapping if enabled
+            if (wrapColumn > 0) {
+                lines = wrapLines(lines, wrapColumn);
+            }
+
             int charCount = content.length();
 
             // Parse grammar
